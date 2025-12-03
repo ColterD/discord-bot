@@ -139,7 +139,10 @@ async function acquireChannelQueue(
 /**
  * Extract message content, stripping bot mentions
  */
-function extractMessageContent(message: ArgsOf<"messageCreate">[0], botId: string | undefined): string {
+function extractMessageContent(
+  message: ArgsOf<"messageCreate">[0],
+  botId: string | undefined
+): string {
   let content = message.content;
   if (botId) {
     const botMention = `<@${botId}>`;

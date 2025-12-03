@@ -707,16 +707,28 @@ ${memoryContext || "No previous context available."}
         maxRedirects: 3,
       });
 
-      // Basic HTML stripping
+      // Safe HTML stripping with iterative approach to handle nested/malformed tags
       let content = response.data as string;
       if (typeof content === "string") {
-        content = content
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "")
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "")
-          .replace(/<[^>]+>/g, " ")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 4000);
+        // Iteratively remove script tags to handle nested cases like <scr<script>ipt>
+        let prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+        }
+        // Iteratively remove style tags
+        prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+        }
+        // Iteratively remove remaining HTML tags
+        prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<[^>]+>/g, " ");
+        }
+        content = content.replace(/\s+/g, " ").trim().slice(0, 4000);
       }
 
       return { success: true, result: content };

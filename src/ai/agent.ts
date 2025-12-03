@@ -519,19 +519,31 @@ Do not include raw JSON tool-calls in your final response.`;
         validateStatus: (status) => status >= 200 && status < 300,
       });
 
-      // Extract text content (basic HTML stripping)
+      // Extract text content with safe HTML stripping
+      // Uses iterative approach to handle nested/malformed tags like <scr<script>ipt>
       let content = "";
       if (typeof response.data === "string") {
         content = response.data;
-        // Remove script and style tags
-        content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
-        content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
-        // Remove HTML tags
-        content = content.replace(/<[^>]+>/g, " ");
-        // Clean up whitespace
-        content = content.replace(/\s+/g, " ").trim();
-        // Limit length
-        content = content.slice(0, 4000);
+        // Iteratively remove script tags to handle nested cases
+        let prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+        }
+        // Iteratively remove style tags
+        prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+        }
+        // Iteratively remove remaining HTML tags
+        prev = "";
+        while (prev !== content) {
+          prev = content;
+          content = content.replace(/<[^>]+>/g, " ");
+        }
+        // Clean up whitespace and limit length
+        content = content.replace(/\s+/g, " ").trim().slice(0, 4000);
       } else if (typeof response.data === "object" && response.data !== null) {
         // Handle JSON responses safely
         content = JSON.stringify(response.data).slice(0, 4000);

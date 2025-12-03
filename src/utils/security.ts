@@ -293,7 +293,8 @@ const OUTPUT_INJECTION_PATTERNS = [
   /data:text\/html/i,
   // Discord webhook/token patterns
   /discord(?:app)?\.com\/api\/webhooks/i,
-  /[MN][A-Za-z\d]{23,27}\.[A-Za-z\d-_]{6}\.[A-Za-z\d-_]{27,}/,
+  // Discord bot token pattern with word boundary anchors
+  /\b[MN][A-Za-z\d]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}\b/,
 ];
 
 export interface OutputValidationResult {

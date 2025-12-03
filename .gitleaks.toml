@@ -20,6 +20,8 @@ paths = [
 commits = []
 stopwords = [
     "MTE2NTI4NDgzNjE3ODQyMjg4OA",
+    "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx",
+    "_test_token_not_real_do_not_use_",
 ]
 
 # Ignore placeholder tokens in documentation

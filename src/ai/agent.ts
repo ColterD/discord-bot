@@ -13,6 +13,7 @@ import {
 } from "./tools.js";
 import { type AIService, getAIService } from "./service.js";
 import { logger } from "../utils/logger.js";
+import { stripHtmlTags } from "../utils/security.js";
 import { getMemoryManager } from "./memory/index.js";
 
 interface AgentMessage {
@@ -520,30 +521,9 @@ Do not include raw JSON tool-calls in your final response.`;
       });
 
       // Extract text content with safe HTML stripping
-      // Uses iterative approach to handle nested/malformed tags like <scr<script>ipt>
       let content = "";
       if (typeof response.data === "string") {
-        content = response.data;
-        // Iteratively remove script tags (handles nested cases and spaces in closing tags)
-        let prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, "");
-        }
-        // Iteratively remove style tags (handles spaces in closing tags)
-        prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, "");
-        }
-        // Iteratively remove remaining HTML tags
-        prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<[^>]+>/g, " ");
-        }
-        // Clean up whitespace and limit length
-        content = content.replace(/\s+/g, " ").trim().slice(0, 4000);
+        content = stripHtmlTags(response.data, 4000);
       } else if (typeof response.data === "object" && response.data !== null) {
         // Handle JSON responses safely
         content = JSON.stringify(response.data).slice(0, 4000);

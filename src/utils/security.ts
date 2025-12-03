@@ -591,6 +591,37 @@ export function isUrlSafe(url: string): { safe: boolean; reason?: string } {
 }
 
 /**
+ * Safely strip HTML tags from content
+ * Uses iterative approach to handle nested/malformed tags like <scr<script>ipt>
+ * Handles script/style tags with content, including variants like </script >
+ */
+export function stripHtmlTags(html: string, maxLength = 4000): string {
+  if (!html || typeof html !== "string") {
+    return "";
+  }
+
+  let content = html;
+  let previousContent = "";
+
+  // Keep iterating until no more changes (handles nested tags)
+  while (previousContent !== content) {
+    previousContent = content;
+
+    // Remove script tags and their content (handles </script > with spaces)
+    content = content.replace(/<script\b[^>]*>[\s\S]*?<\/\s*script\s*>/gi, "");
+
+    // Remove style tags and their content (handles </style > with spaces)
+    content = content.replace(/<style\b[^>]*>[\s\S]*?<\/\s*style\s*>/gi, "");
+
+    // Remove all other HTML tags
+    content = content.replace(/<[^>]+>/g, " ");
+  }
+
+  // Clean up whitespace and limit length
+  return content.replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+/**
  * Rate limit key generator for tool calls
  * Creates a unique key for rate limiting tool usage
  */

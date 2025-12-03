@@ -18,6 +18,7 @@ import { mcpManager, type McpTool } from "../mcp/index.js";
 import { detectImpersonation, type ThreatDetail } from "../security/index.js";
 import { checkToolAccess, filterToolsForUser } from "../security/tool-permissions.js";
 import { createLogger } from "../utils/logger.js";
+import { stripHtmlTags } from "../utils/security.js";
 import { buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
 import { executeImageGenerationTool } from "./image-service.js";
 import { config } from "../config.js";
@@ -707,28 +708,10 @@ ${memoryContext || "No previous context available."}
         maxRedirects: 3,
       });
 
-      // Safe HTML stripping with iterative approach to handle nested/malformed tags
+      // Safe HTML stripping using shared utility
       let content = response.data as string;
       if (typeof content === "string") {
-        // Iteratively remove script tags (handles nested cases and spaces in closing tags)
-        let prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, "");
-        }
-        // Iteratively remove style tags (handles spaces in closing tags)
-        prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, "");
-        }
-        // Iteratively remove remaining HTML tags
-        prev = "";
-        while (prev !== content) {
-          prev = content;
-          content = content.replace(/<[^>]+>/g, " ");
-        }
-        content = content.replace(/\s+/g, " ").trim().slice(0, 4000);
+        content = stripHtmlTags(content, 4000);
       }
 
       return { success: true, result: content };

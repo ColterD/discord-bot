@@ -4,14 +4,22 @@
 [extend]
 useDefault = true
 
-# Project-specific allowlist
-[[allowlists]]
-description = "Ignore test files"
+# Ignore all test files completely
+[allowlist]
+description = "Global allowlist"
 paths = [
+    '''tests/''',
+    '''\.test\.ts$''',
+    '''\.test\.js$''',
+    '''\.spec\.ts$''',
+    '''\.spec\.js$''',
     '''\.env\.example$''',
-    '''tests/.*''',
-    '''.*\.test\.(ts|js)$''',
-    '''.*\.spec\.(ts|js)$''',
+]
+
+# Specific fingerprints to ignore (from gitleaks output)
+commits = []
+stopwords = [
+    "MTE2NTI4NDgzNjE3ODQyMjg4OA",
 ]
 
 # Ignore placeholder tokens in documentation
@@ -33,10 +41,14 @@ regexes = [
     '''registry\.npmjs\.org''',
 ]
 
-# Ignore fake Discord tokens in test cases
+# Ignore fake Discord tokens in test files
 [[allowlists]]
 description = "Ignore test Discord token patterns"
+paths = [
+    '''tests/integration/orchestrator\.test\.ts''',
+]
 regexTarget = "match"
 regexes = [
     '''MTE2NTI4NDgzNjE3ODQyMjg4OA\..*''',
+    '''Here's a token:.*''',
 ]

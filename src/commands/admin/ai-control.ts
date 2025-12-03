@@ -1,5 +1,5 @@
 import { Discord, Slash, Guard } from "discordx";
-import { CommandInteraction, EmbedBuilder } from "discord.js";
+import { type CommandInteraction, EmbedBuilder } from "discord.js";
 import { OwnerGuard } from "../../guards/owner.guard.js";
 import { getAIControlService } from "../../ai/control.js";
 
@@ -65,11 +65,7 @@ export class AdminCommands {
     const controlService = getAIControlService();
     const status = await controlService.getStatus();
 
-    const statusEmoji = status.running
-      ? status.modelLoaded
-        ? "🟢"
-        : "🟡"
-      : "🔴";
+    const statusEmoji = status.running ? (status.modelLoaded ? "🟢" : "🟡") : "🔴";
     const statusText = status.running
       ? status.modelLoaded
         ? "Online & Model Loaded"
@@ -78,9 +74,7 @@ export class AdminCommands {
 
     const embed = new EmbedBuilder()
       .setTitle(`${statusEmoji} AI Status`)
-      .setColor(
-        status.running ? (status.modelLoaded ? 0x00ff00 : 0xffaa00) : 0xff0000
-      )
+      .setColor(status.running ? (status.modelLoaded ? 0x00ff00 : 0xffaa00) : 0xff0000)
       .addFields(
         { name: "Status", value: statusText, inline: true },
         { name: "Model", value: status.model || "Unknown", inline: true },

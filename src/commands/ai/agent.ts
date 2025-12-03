@@ -1,8 +1,4 @@
-import {
-  ApplicationCommandOptionType,
-  CommandInteraction,
-  EmbedBuilder,
-} from "discord.js";
+import { ApplicationCommandOptionType, type CommandInteraction, EmbedBuilder } from "discord.js";
 import { Discord, Slash, SlashOption } from "discordx";
 import { getAgentService } from "../../ai/agent.js";
 import config from "../../config.js";
@@ -90,8 +86,7 @@ export class AgentCommands {
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
       const errorEmbed = new EmbedBuilder()
         .setColor(config.colors.error)
@@ -105,8 +100,7 @@ export class AgentCommands {
 
   @Slash({
     name: "research",
-    description:
-      "Have the agent research a topic using web and academic sources",
+    description: "Have the agent research a topic using web and academic sources",
   })
   async research(
     @SlashOption({
@@ -152,8 +146,7 @@ export class AgentCommands {
 
       // Sources used
       const sources: string[] = [];
-      if (result.toolsUsed.includes("wikipedia_summary"))
-        sources.push("Wikipedia");
+      if (result.toolsUsed.includes("wikipedia_summary")) sources.push("Wikipedia");
       if (result.toolsUsed.includes("web_search")) sources.push("Web Search");
       if (result.toolsUsed.includes("search_arxiv")) sources.push("arXiv");
       if (result.toolsUsed.includes("fetch_url")) sources.push("Web Pages");
@@ -180,8 +173,7 @@ export class AgentCommands {
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
       await interaction.editReply({
         content: `❌ Research failed: ${errorMessage}`,
@@ -223,8 +215,7 @@ Use the calculate tool to verify your work. Show your reasoning and provide the 
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
       await interaction.editReply({
         content: `❌ Calculation failed: ${errorMessage}`,

@@ -21,8 +21,8 @@ const rateLimits = new Collection<Snowflake, RateLimitEntry>();
  * Prevents users from spamming commands
  */
 export function RateLimitGuard(
-  maxRequests: number = 5,
-  windowMs: number = 60000
+  maxRequests = 5,
+  windowMs = 60000
 ): GuardFunction<
   | CommandInteraction
   | ContextMenuCommandInteraction
@@ -48,9 +48,7 @@ export function RateLimitGuard(
     const userLimit = rateLimits.get(userId) ?? { timestamps: [] };
 
     // Filter out old timestamps
-    userLimit.timestamps = userLimit.timestamps.filter(
-      (timestamp) => now - timestamp < windowMs
-    );
+    userLimit.timestamps = userLimit.timestamps.filter((timestamp) => now - timestamp < windowMs);
 
     if (userLimit.timestamps.length >= maxRequests) {
       const oldestTimestamp = userLimit.timestamps[0];
@@ -82,9 +80,7 @@ setInterval(() => {
   const windowMs = 60000; // Default window
 
   rateLimits.forEach((entry, userId) => {
-    entry.timestamps = entry.timestamps.filter(
-      (timestamp) => now - timestamp < windowMs
-    );
+    entry.timestamps = entry.timestamps.filter((timestamp) => now - timestamp < windowMs);
     if (entry.timestamps.length === 0) {
       rateLimits.delete(userId);
     }

@@ -70,10 +70,7 @@ export function getUserPermissionLevel(userId: string): PermissionLevel {
 /**
  * Check if a user has at least the required permission level
  */
-export function hasPermissionLevel(
-  userId: string,
-  requiredLevel: PermissionLevel
-): boolean {
+export function hasPermissionLevel(userId: string, requiredLevel: PermissionLevel): boolean {
   return getUserPermissionLevel(userId) >= requiredLevel;
 }
 

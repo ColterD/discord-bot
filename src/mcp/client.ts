@@ -87,9 +87,7 @@ export class McpClientManager {
     try {
       const mcpConfig = await this.loadConfig();
 
-      for (const [serverName, serverConfig] of Object.entries(
-        mcpConfig.mcpServers
-      )) {
+      for (const [serverName, serverConfig] of Object.entries(mcpConfig.mcpServers)) {
         try {
           await this.connectToServer(serverName, serverConfig);
         } catch (error) {
@@ -103,9 +101,7 @@ export class McpClientManager {
       }
 
       this.initialized = true;
-      log.info(
-        `Initialized with ${this.connections.size} MCP server(s) connected`
-      );
+      log.info(`Initialized with ${this.connections.size} MCP server(s) connected`);
     } catch (error) {
       log.error(
         "Failed to initialize MCP client manager: " +
@@ -128,11 +124,7 @@ export class McpClientManager {
 
       return McpConfigSchema.parse(expanded);
     } catch (error) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        error.code === "ENOENT"
-      ) {
+      if (error instanceof Error && "code" in error && error.code === "ENOENT") {
         log.warn("MCP config file not found, using empty config");
         return { mcpServers: {} };
       }
@@ -165,17 +157,11 @@ export class McpClientManager {
   /**
    * Connect to a single MCP server
    */
-  private async connectToServer(
-    serverName: string,
-    serverConfig: McpServerConfig
-  ): Promise<void> {
+  private async connectToServer(serverName: string, serverConfig: McpServerConfig): Promise<void> {
     log.debug(`Connecting to MCP server: ${serverName}`);
 
     // Prepare environment
-    const env: Record<string, string> = { ...process.env } as Record<
-      string,
-      string
-    >;
+    const env: Record<string, string> = { ...process.env } as Record<string, string>;
     if (serverConfig.env) {
       for (const [key, value] of Object.entries(serverConfig.env)) {
         env[key] = value;
@@ -217,9 +203,7 @@ export class McpClientManager {
       description: tool.description ?? "",
       inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
       serverName,
-      permissions:
-        (serverConfig.metadata?.permissions as McpTool["permissions"]) ??
-        "public",
+      permissions: (serverConfig.metadata?.permissions ?? "public") as McpTool["permissions"],
     }));
 
     const connection: McpConnection = {
@@ -232,9 +216,7 @@ export class McpClientManager {
     };
 
     this.connections.set(serverName, connection);
-    log.info(
-      `Connected to MCP server ${serverName} with ${tools.length} tool(s)`
-    );
+    log.info(`Connected to MCP server ${serverName} with ${tools.length} tool(s)`);
   }
 
   /**
@@ -253,9 +235,7 @@ export class McpClientManager {
   /**
    * Get tools filtered by permission level
    */
-  getToolsForPermission(
-    permissionLevel: "public" | "owner-only" | "admin-only"
-  ): McpTool[] {
+  getToolsForPermission(permissionLevel: "public" | "owner-only" | "admin-only"): McpTool[] {
     const allTools = this.getAllTools();
 
     switch (permissionLevel) {
@@ -264,9 +244,7 @@ export class McpClientManager {
         return allTools;
       case "admin-only":
         // Admin can see public and admin-only
-        return allTools.filter(
-          (t) => t.permissions === "public" || t.permissions === "admin-only"
-        );
+        return allTools.filter((t) => t.permissions === "public" || t.permissions === "admin-only");
       case "public":
       default:
         // Public only sees public tools
@@ -277,10 +255,7 @@ export class McpClientManager {
   /**
    * Call a tool on an MCP server
    */
-  async callTool(
-    toolName: string,
-    args: Record<string, unknown>
-  ): Promise<unknown> {
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
     // Find which server has this tool
     for (const connection of this.connections.values()) {
       const tool = connection.tools.find((t) => t.name === toolName);

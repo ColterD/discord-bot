@@ -26,12 +26,12 @@ A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring
 
 ### Tool Permissions (Four-Tier)
 
-| Tier       | Access                    | Examples                            |
-| ---------- | ------------------------- | ----------------------------------- |
-| Owner-only | Bot owner exclusively     | filesystem_\*, execute, shell, eval |
-| Restricted | Hidden from non-owners    | code_interpreter, admin\_\*         |
-| Elevated   | Visible but may be denied | database\_\*, memory_edit           |
-| Public     | Available to all          | web_search, calculate, get_time     |
+| Tier       | Access                    | Examples                             |
+| ---------- | ------------------------- | ------------------------------------ |
+| Owner-only | Bot owner exclusively     | filesystem\_\*, execute, shell, eval |
+| Restricted | Hidden from non-owners    | code_interpreter, admin\_\*          |
+| Elevated   | Visible but may be denied | database\_\*, memory_edit            |
+| Public     | Available to all          | web_search, calculate, get_time      |
 
 ### Security Features
 
@@ -219,12 +219,12 @@ The container uses `host.docker.internal:11434` to reach Ollama running on your 
 
 ### Admin (Owner-only)
 
-| Command               | Description              |
-| --------------------- | ------------------------ |
-| `/ai-control status`  | View AI system status    |
-| `/ai-control enable`  | Enable AI features       |
-| `/ai-control disable` | Disable AI features      |
-| `/persona set`        | Set bot personality      |
+| Command               | Description           |
+| --------------------- | --------------------- |
+| `/ai-control status`  | View AI system status |
+| `/ai-control enable`  | Enable AI features    |
+| `/ai-control disable` | Disable AI features   |
+| `/persona set`        | Set bot personality   |
 
 ### Context Menus
 
@@ -312,16 +312,16 @@ npm run test:integration
 
 ## Scripts
 
-| Script                   | Description                       |
-| ------------------------ | --------------------------------- |
-| `npm run dev`            | Start with hot reload (tsx watch) |
-| `npm run build`          | Compile TypeScript                |
-| `npm start`              | Run compiled JS                   |
-| `npm run deploy`         | Deploy slash commands             |
-| `npm run typecheck`      | Type check without emit           |
-| `npm test`               | Run integration tests             |
-| `npm run test:integration` | Run integration tests           |
-| `npm run clean`          | Delete dist folder                |
+| Script                     | Description                       |
+| -------------------------- | --------------------------------- |
+| `npm run dev`              | Start with hot reload (tsx watch) |
+| `npm run build`            | Compile TypeScript                |
+| `npm start`                | Run compiled JS                   |
+| `npm run deploy`           | Deploy slash commands             |
+| `npm run typecheck`        | Type check without emit           |
+| `npm test`                 | Run integration tests             |
+| `npm run test:integration` | Run integration tests             |
+| `npm run clean`            | Delete dist folder                |
 
 ## License
 

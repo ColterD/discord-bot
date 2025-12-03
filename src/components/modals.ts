@@ -1,5 +1,5 @@
 import {
-  ModalSubmitInteraction,
+  type ModalSubmitInteraction,
   ActionRowBuilder,
   TextInputBuilder,
   TextInputStyle,
@@ -18,12 +18,9 @@ export class ModalComponents {
    * Feedback modal handler
    */
   @ModalComponent({ id: "feedback_modal" })
-  async handleFeedbackModal(
-    interaction: ModalSubmitInteraction
-  ): Promise<void> {
+  async handleFeedbackModal(interaction: ModalSubmitInteraction): Promise<void> {
     const feedback = interaction.fields.getTextInputValue("feedback_input");
-    const category =
-      interaction.fields.getTextInputValue("feedback_category") || "General";
+    const category = interaction.fields.getTextInputValue("feedback_category") || "General";
 
     const embed = new EmbedBuilder()
       .setTitle("📝 Feedback Received")
@@ -45,13 +42,10 @@ export class ModalComponents {
    * AI prompt modal handler
    */
   @ModalComponent({ id: "ai_prompt_modal" })
-  async handleAIPromptModal(
-    interaction: ModalSubmitInteraction
-  ): Promise<void> {
+  async handleAIPromptModal(interaction: ModalSubmitInteraction): Promise<void> {
     const prompt = interaction.fields.getTextInputValue("prompt_input");
     const systemPrompt =
-      interaction.fields.getTextInputValue("system_prompt") ||
-      "You are a helpful assistant.";
+      interaction.fields.getTextInputValue("system_prompt") || "You are a helpful assistant.";
 
     await interaction.deferReply();
 
@@ -60,19 +54,14 @@ export class ModalComponents {
 
       const embed = new EmbedBuilder()
         .setTitle("🤖 AI Response")
-        .setDescription(
-          response.length > 4000
-            ? response.substring(0, 4000) + "..."
-            : response
-        )
+        .setDescription(response.length > 4000 ? response.substring(0, 4000) + "..." : response)
         .setColor(config.colors.primary)
         .setFooter({ text: `Model: ${this.aiService.getModel()}` })
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply({
         content: `❌ Error: ${errorMessage}`,
       });
@@ -85,11 +74,8 @@ export class ModalComponents {
   @ModalComponent({ id: "report_modal" })
   async handleReportModal(interaction: ModalSubmitInteraction): Promise<void> {
     const reportType = interaction.fields.getTextInputValue("report_type");
-    const description =
-      interaction.fields.getTextInputValue("report_description");
-    const evidence =
-      interaction.fields.getTextInputValue("report_evidence") ||
-      "None provided";
+    const description = interaction.fields.getTextInputValue("report_description");
+    const evidence = interaction.fields.getTextInputValue("report_evidence") || "None provided";
 
     const embed = new EmbedBuilder()
       .setTitle("🚨 Report Submitted")
@@ -113,9 +99,7 @@ export class ModalComponents {
  * Create a feedback modal
  */
 export function createFeedbackModal(): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId("feedback_modal")
-    .setTitle("📝 Submit Feedback");
+  const modal = new ModalBuilder().setCustomId("feedback_modal").setTitle("📝 Submit Feedback");
 
   const categoryInput = new TextInputBuilder()
     .setCustomId("feedback_category")
@@ -145,9 +129,7 @@ export function createFeedbackModal(): ModalBuilder {
  * Create an AI prompt modal
  */
 export function createAIPromptModal(): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId("ai_prompt_modal")
-    .setTitle("🤖 AI Prompt");
+  const modal = new ModalBuilder().setCustomId("ai_prompt_modal").setTitle("🤖 AI Prompt");
 
   const systemPromptInput = new TextInputBuilder()
     .setCustomId("system_prompt")
@@ -177,9 +159,7 @@ export function createAIPromptModal(): ModalBuilder {
  * Create a report modal
  */
 export function createReportModal(): ModalBuilder {
-  const modal = new ModalBuilder()
-    .setCustomId("report_modal")
-    .setTitle("🚨 Submit Report");
+  const modal = new ModalBuilder().setCustomId("report_modal").setTitle("🚨 Submit Report");
 
   const typeInput = new TextInputBuilder()
     .setCustomId("report_type")

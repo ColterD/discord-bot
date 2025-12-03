@@ -5,7 +5,7 @@
  * Supports model sleep state indication
  */
 
-import { ActivityType, PresenceStatusData } from "discord.js";
+import { ActivityType, type PresenceStatusData } from "discord.js";
 import type { Client } from "discordx";
 import { getChannelQueue } from "./rate-limiter.js";
 import { getConversationService } from "../ai/conversation.js";
@@ -92,10 +92,7 @@ async function checkCachedAvailability(): Promise<boolean> {
   const now = Date.now();
 
   // Return cached value if still valid and not expired
-  if (
-    cachedAvailability !== null &&
-    now - lastAvailabilityCheck < AVAILABILITY_CACHE_MS
-  ) {
+  if (cachedAvailability !== null && now - lastAvailabilityCheck < AVAILABILITY_CACHE_MS) {
     return cachedAvailability;
   }
 

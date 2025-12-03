@@ -1,5 +1,5 @@
 import {
-  ButtonInteraction,
+  type ButtonInteraction,
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
@@ -88,9 +88,7 @@ export class ButtonComponents {
   /**
    * Utility method to create pagination buttons
    */
-  private createPaginationRow(
-    currentPage: number
-  ): ActionRowBuilder<ButtonBuilder>[] {
+  private createPaginationRow(currentPage: number): ActionRowBuilder<ButtonBuilder>[] {
     const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
       new ButtonBuilder()
         .setCustomId(`page_prev_${currentPage}`)
@@ -112,14 +110,8 @@ export class ButtonComponents {
  */
 export function createConfirmationButtons(): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
-    new ButtonBuilder()
-      .setCustomId("confirm")
-      .setLabel("Confirm")
-      .setStyle(ButtonStyle.Success),
-    new ButtonBuilder()
-      .setCustomId("cancel")
-      .setLabel("Cancel")
-      .setStyle(ButtonStyle.Danger)
+    new ButtonBuilder().setCustomId("confirm").setLabel("Confirm").setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId("cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger)
   );
 }
 
@@ -128,7 +120,7 @@ export function createConfirmationButtons(): ActionRowBuilder<ButtonBuilder> {
  */
 export function createPaginationButtons(
   currentPage: number,
-  hasMore: boolean = true
+  hasMore = true
 ): ActionRowBuilder<ButtonBuilder> {
   return new ActionRowBuilder<ButtonBuilder>().addComponents(
     new ButtonBuilder()

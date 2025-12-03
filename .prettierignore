@@ -1,0 +1,8 @@
+# Prettier ignore file
+dist/
+node_modules/
+coverage/
+*.lock
+package-lock.json
+*.md
+logs/

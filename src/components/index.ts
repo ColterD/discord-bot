@@ -1,8 +1,4 @@
-export {
-  ButtonComponents,
-  createConfirmationButtons,
-  createPaginationButtons,
-} from "./buttons.js";
+export { ButtonComponents, createConfirmationButtons, createPaginationButtons } from "./buttons.js";
 export {
   SelectMenuComponents,
   createLanguageSelectMenu,

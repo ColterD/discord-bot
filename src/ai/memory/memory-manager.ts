@@ -13,10 +13,7 @@
 import { getMem0Client } from "./mem0.js";
 import { createLogger } from "../../utils/logger.js";
 import { config } from "../../config.js";
-import {
-  conversationStore,
-  type ConversationMessage,
-} from "./conversation-store.js";
+import { conversationStore, type ConversationMessage } from "./conversation-store.js";
 
 const log = createLogger("MemoryManager");
 
@@ -113,11 +110,7 @@ export class MemoryManager {
    * @param query - The query to search for
    * @param limit - Maximum number of results
    */
-  async searchMemories(
-    userId: string,
-    query: string,
-    limit: number = 5
-  ): Promise<MemoryResult[]> {
+  async searchMemories(userId: string, query: string, limit = 5): Promise<MemoryResult[]> {
     if (!userId) {
       log.warn("Attempted to search memories without userId - returning empty");
       return [];
@@ -135,10 +128,7 @@ export class MemoryManager {
         metadata: r.metadata,
       }));
     } catch (error) {
-      log.error(
-        `Failed to search memories for user ${userId}:`,
-        error as Error
-      );
+      log.error(`Failed to search memories for user ${userId}:`, error as Error);
       return [];
     }
   }
@@ -214,10 +204,7 @@ export class MemoryManager {
       log.info(`Deleted ${count} memories for user ${userId}`);
       return count;
     } catch (error) {
-      log.error(
-        `Failed to delete memories for user ${userId}:`,
-        error as Error
-      );
+      log.error(`Failed to delete memories for user ${userId}:`, error as Error);
       return 0;
     }
   }
@@ -310,7 +297,7 @@ export class MemoryManager {
     );
 
     // Trim to token budget
-    let conversationHistory = this.trimToTokenBudget(
+    const conversationHistory = this.trimToTokenBudget(
       recentMessages,
       activeTokens * charsPerToken
     );
@@ -324,13 +311,8 @@ export class MemoryManager {
 
     let profileContext = "";
     if (userProfileMemories.length > 0) {
-      const profileLines = userProfileMemories
-        .map((m) => `• ${m.memory}`)
-        .join("\n");
-      profileContext = this.trimString(
-        profileLines,
-        profileTokens * charsPerToken
-      );
+      const profileLines = userProfileMemories.map((m) => `• ${m.memory}`).join("\n");
+      profileContext = this.trimString(profileLines, profileTokens * charsPerToken);
     }
 
     // Tier 3: Episodic Sessions (relevant past conversations from Mem0)
@@ -342,10 +324,7 @@ export class MemoryManager {
         .filter((m) => !userProfileMemories.some((p) => p.id === m.id))
         .map((m) => `• ${m.memory}`)
         .join("\n");
-      episodicContext = this.trimString(
-        episodicLines,
-        episodicTokens * charsPerToken
-      );
+      episodicContext = this.trimString(episodicLines, episodicTokens * charsPerToken);
     }
 
     // Build system context

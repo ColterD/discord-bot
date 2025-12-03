@@ -21,10 +21,9 @@ interface HealthStatus {
 
 async function checkOllama(): Promise<boolean> {
   try {
-    const response = await fetch(
-      `${process.env.OLLAMA_HOST ?? "http://ollama:11434"}/api/tags`,
-      { signal: AbortSignal.timeout(5000) }
-    );
+    const response = await fetch(`${process.env.OLLAMA_HOST ?? "http://ollama:11434"}/api/tags`, {
+      signal: AbortSignal.timeout(5000),
+    });
     return response.ok;
   } catch {
     return false;
@@ -35,12 +34,13 @@ async function checkValkey(): Promise<boolean> {
   try {
     // Simple TCP connect check to Valkey port
     const url = process.env.VALKEY_URL ?? "valkey://valkey:6379";
-    const match = url.match(/:\/\/([^:]+):(\d+)/);
+    const match = /:\/\/([^:]+):(\d+)/.exec(url);
     if (!match) return false;
 
     const [, host, port] = match;
 
     return new Promise((resolve) => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const net = require("net") as typeof import("net");
       const socket = new net.Socket();
       socket.setTimeout(3000);
@@ -95,7 +95,6 @@ async function runHealthcheck(): Promise<void> {
     }
   }
 
-  // eslint-disable-next-line no-console
   console.log(JSON.stringify(status));
 
   // Exit healthy even if degraded (container should stay up)

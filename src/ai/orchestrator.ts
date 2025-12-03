@@ -12,22 +12,13 @@ import { evaluate } from "mathjs";
 import axios from "axios";
 import { type AIService, getAIService } from "./service.js";
 import { getMemoryManager } from "./memory/index.js";
-import {
-  conversationStore,
-  type ConversationMessage,
-} from "./memory/conversation-store.js";
+import { conversationStore, type ConversationMessage } from "./memory/conversation-store.js";
 import { SessionSummarizer } from "./memory/session-summarizer.js";
 import { mcpManager, type McpTool } from "../mcp/index.js";
 import { detectImpersonation, type ThreatDetail } from "../security/index.js";
-import {
-  checkToolAccess,
-  filterToolsForUser,
-} from "../security/tool-permissions.js";
+import { checkToolAccess, filterToolsForUser } from "../security/tool-permissions.js";
 import { createLogger } from "../utils/logger.js";
-import {
-  buildSecureSystemPrompt,
-  validateLLMOutput,
-} from "../utils/security.js";
+import { buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
 import { executeImageGenerationTool } from "./image-service.js";
 import { config } from "../config.js";
 
@@ -124,10 +115,7 @@ export class Orchestrator {
   /**
    * Run the orchestrator with a user message
    */
-  async run(
-    message: string,
-    options: OrchestratorOptions
-  ): Promise<OrchestratorResponse> {
+  async run(message: string, options: OrchestratorOptions): Promise<OrchestratorResponse> {
     const {
       user,
       member,
@@ -138,35 +126,26 @@ export class Orchestrator {
     } = options;
 
     const userId = user.id;
-    const displayName =
-      member?.displayName ?? user.displayName ?? user.username;
+    const displayName = member?.displayName ?? user.displayName ?? user.username;
     const username = user.username;
 
     // Step 1: Security check - detect impersonation/injection
     const securityCheck = detectImpersonation(message, displayName, username);
     if (securityCheck.detected && securityCheck.confidence > 0.8) {
-      const threatTypes = securityCheck.threats
-        .map((t: ThreatDetail) => t.type)
-        .join(", ");
+      const threatTypes = securityCheck.threats.map((t: ThreatDetail) => t.type).join(", ");
       log.warn(`Blocked message from ${user.tag}: ${threatTypes}`);
       return {
-        content:
-          "I noticed something unusual in your message. Could you rephrase that?",
+        content: "I noticed something unusual in your message. Could you rephrase that?",
         toolsUsed: [],
         iterations: 0,
         blocked: true,
-        blockReason:
-          securityCheck.threats[0]?.description ?? "Security check failed",
+        blockReason: securityCheck.threats[0]?.description ?? "Security check failed",
       };
     }
 
     // Step 2: Build memory context using three-tier architecture
     const memoryManager = getMemoryManager();
-    const memoryResult = await memoryManager.buildContextForChat(
-      userId,
-      channelId,
-      message
-    );
+    const memoryResult = await memoryManager.buildContextForChat(userId, channelId, message);
     const { systemContext, conversationHistory } = memoryResult;
 
     // Step 3: Get available tools for this user
@@ -182,8 +161,7 @@ export class Orchestrator {
     });
 
     // Step 6: Build conversation context
-    const conversationContext =
-      this.formatConversationHistory(conversationHistory);
+    const conversationContext = this.formatConversationHistory(conversationHistory);
 
     // Step 7: Run the agent loop
     const context: OrchestratorMessage[] = [];
@@ -220,14 +198,9 @@ export class Orchestrator {
           maxTokens: 4096,
         });
       } catch (error) {
-        log.error(
-          `LLM request failed: ${
-            error instanceof Error ? error.message : "Unknown"
-          }`
-        );
+        log.error(`LLM request failed: ${error instanceof Error ? error.message : "Unknown"}`);
         return {
-          content:
-            "I'm having trouble thinking right now. Please try again in a moment.",
+          content: "I'm having trouble thinking right now. Please try again in a moment.",
           toolsUsed,
           iterations,
         };
@@ -236,8 +209,7 @@ export class Orchestrator {
       // Validate LLM output
       if (!validateLLMOutput(response)) {
         log.warn(`LLM output failed validation for user ${userId}`);
-        response =
-          "I generated an invalid response. Let me try again differently.";
+        response = "I generated an invalid response. Let me try again differently.";
       }
 
       // Check for tool call
@@ -254,9 +226,7 @@ export class Orchestrator {
           context.push({
             role: "tool",
             name: toolCall.name,
-            content: toolAccess.visible
-              ? `Error: ${toolAccess.reason}`
-              : "Error: Unknown tool.",
+            content: toolAccess.visible ? `Error: ${toolAccess.reason}` : "Error: Unknown tool.",
           });
           continue;
         }
@@ -284,14 +254,12 @@ export class Orchestrator {
             role: "tool",
             name: toolCall.name,
             content: result.success
-              ? result.result ?? "Tool executed successfully."
+              ? (result.result ?? "Tool executed successfully.")
               : `Error: ${result.error ?? "Unknown error"}`,
           });
         } catch (error) {
           log.error(
-            `Tool ${toolCall.name} failed: ${
-              error instanceof Error ? error.message : "Unknown"
-            }`
+            `Tool ${toolCall.name} failed: ${error instanceof Error ? error.message : "Unknown"}`
           );
           context.push({
             role: "tool",
@@ -310,11 +278,9 @@ export class Orchestrator {
         });
 
         // Check if we should trigger summarization (background, non-blocking)
-        void this.checkAndTriggerSummarization(userId, channelId).catch(
-          (err: Error) => {
-            log.error(`Summarization check failed: ${err.message}`);
-          }
-        );
+        void this.checkAndTriggerSummarization(userId, channelId).catch((err: Error) => {
+          log.error(`Summarization check failed: ${err.message}`);
+        });
 
         // Store to long-term memory (background, non-blocking)
         void memoryManager
@@ -355,10 +321,7 @@ export class Orchestrator {
   /**
    * Check and trigger summarization if needed
    */
-  private async checkAndTriggerSummarization(
-    userId: string,
-    channelId: string
-  ): Promise<void> {
+  private async checkAndTriggerSummarization(userId: string, channelId: string): Promise<void> {
     const metadata = await conversationStore.getMetadata(userId, channelId);
     if (!metadata) return;
 
@@ -366,20 +329,13 @@ export class Orchestrator {
     const shouldSummarize =
       !metadata.summarized &&
       (metadata.messageCount >= config.memory.summarizeAfterMessages ||
-        Date.now() - metadata.lastActivityAt >=
-          config.memory.summarizeAfterIdleMs);
+        Date.now() - metadata.lastActivityAt >= config.memory.summarizeAfterIdleMs);
 
     if (shouldSummarize) {
-      const messages = await conversationStore.getRecentMessages(
-        userId,
-        channelId,
-        30
-      );
-      void this.summarizer
-        .summarize(userId, channelId, messages)
-        .catch((err: Error) => {
-          log.error(`Summarization failed: ${err.message}`);
-        });
+      const messages = await conversationStore.getRecentMessages(userId, channelId, 30);
+      void this.summarizer.summarize(userId, channelId, messages).catch((err: Error) => {
+        log.error(`Summarization failed: ${err.message}`);
+      });
     }
   }
 
@@ -467,9 +423,7 @@ ${memoryContext || "No previous context available."}
           prompt += `Assistant: ${msg.content}\n\n`;
           break;
         case "tool":
-          prompt += `[Tool "${msg.name ?? "unknown"}" result]:\n${
-            msg.content
-          }\n\n`;
+          prompt += `[Tool "${msg.name ?? "unknown"}" result]:\n${msg.content}\n\n`;
           break;
       }
     }
@@ -524,15 +478,11 @@ ${memoryContext || "No previous context available."}
   /**
    * Execute a tool call
    */
-  private async executeTool(
-    toolCall: ToolCall,
-    userId: string
-  ): Promise<ToolResult> {
+  private async executeTool(toolCall: ToolCall, userId: string): Promise<ToolResult> {
     const timeoutPromise = new Promise<ToolResult>((_, reject) => {
-      setTimeout(
-        () => reject(new Error("Tool execution timed out")),
-        TOOL_TIMEOUT_MS
-      );
+      setTimeout(() => {
+        reject(new Error("Tool execution timed out"));
+      }, TOOL_TIMEOUT_MS);
     });
 
     const executionPromise = this.executeToolInternal(toolCall, userId);
@@ -543,10 +493,7 @@ ${memoryContext || "No previous context available."}
   /**
    * Internal tool execution
    */
-  private async executeToolInternal(
-    toolCall: ToolCall,
-    userId: string
-  ): Promise<ToolResult> {
+  private async executeToolInternal(toolCall: ToolCall, userId: string): Promise<ToolResult> {
     const { name, arguments: args } = toolCall;
 
     // Check if it's an MCP tool
@@ -555,18 +502,12 @@ ${memoryContext || "No previous context available."}
         const result = await mcpManager.callTool(name, args);
         return {
           success: true,
-          result:
-            typeof result === "string"
-              ? result
-              : JSON.stringify(result, null, 2),
+          result: typeof result === "string" ? result : JSON.stringify(result, null, 2),
         };
       } catch (error) {
         return {
           success: false,
-          error:
-            error instanceof Error
-              ? error.message
-              : "MCP tool execution failed",
+          error: error instanceof Error ? error.message : "MCP tool execution failed",
         };
       }
     }
@@ -658,9 +599,7 @@ ${memoryContext || "No previous context available."}
       };
     }
 
-    log.info(
-      `Image generation requested by ${userId}: ${prompt.slice(0, 50)}...`
-    );
+    log.info(`Image generation requested by ${userId}: ${prompt.slice(0, 50)}...`);
 
     try {
       // Build args object, only including defined properties
@@ -699,8 +638,7 @@ ${memoryContext || "No previous context available."}
 
       return response;
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       log.error(`Image generation failed: ${errorMessage}`);
       return {
         success: false,
@@ -721,7 +659,7 @@ ${memoryContext || "No previous context available."}
 
       const data = response.data as {
         AbstractText?: string;
-        RelatedTopics?: Array<{ Text?: string }>;
+        RelatedTopics?: { Text?: string }[];
       };
 
       let result = "";

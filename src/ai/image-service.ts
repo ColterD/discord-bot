@@ -13,23 +13,25 @@ interface QueuePromptResponse {
   number: number;
 }
 
-interface HistoryResponse {
-  [promptId: string]: {
-    outputs: {
-      [nodeId: string]: {
-        images?: Array<{
+type HistoryResponse = Record<
+  string,
+  {
+    outputs: Record<
+      string,
+      {
+        images?: {
           filename: string;
           subfolder: string;
           type: string;
-        }>;
-      };
-    };
+        }[];
+      }
+    >;
     status: {
       completed: boolean;
       status_str: string;
     };
-  };
-}
+  }
+>;
 
 interface SystemStatsResponse {
   system: {
@@ -37,12 +39,12 @@ interface SystemStatsResponse {
     python_version: string;
     embedded_python: boolean;
   };
-  devices: Array<{
+  devices: {
     name: string;
     type: string;
     vram_total: number;
     vram_free: number;
-  }>;
+  }[];
 }
 
 interface ImageResult {
@@ -65,7 +67,7 @@ interface QueueStatus {
 export class ImageService {
   private baseUrl: string;
   private clientId: string;
-  private activeJobs: Map<string, string> = new Map(); // promptId -> userId
+  private activeJobs = new Map<string, string>(); // promptId -> userId
 
   constructor() {
     this.baseUrl = config.comfyui.url;
@@ -270,13 +272,10 @@ export class ImageService {
 
     while (Date.now() - startTime < timeout) {
       try {
-        const historyResponse = await fetch(
-          `${this.baseUrl}/history/${promptId}`,
-          {
-            method: "GET",
-            signal: AbortSignal.timeout(5000),
-          }
-        );
+        const historyResponse = await fetch(`${this.baseUrl}/history/${promptId}`, {
+          method: "GET",
+          signal: AbortSignal.timeout(5000),
+        });
 
         if (!historyResponse.ok) {
           await this.sleep(pollInterval);
@@ -298,11 +297,7 @@ export class ImageService {
             if (nodeOutput.images && nodeOutput.images.length > 0) {
               const image = nodeOutput.images[0];
               if (image) {
-                return this.downloadImage(
-                  image.filename,
-                  image.subfolder,
-                  image.type
-                );
+                return this.downloadImage(image.filename, image.subfolder, image.type);
               }
             }
           }
@@ -311,7 +306,7 @@ export class ImageService {
         }
 
         await this.sleep(pollInterval);
-      } catch (error) {
+      } catch (_error) {
         // Continue polling on transient errors
         await this.sleep(pollInterval);
       }
@@ -510,13 +505,11 @@ export type { ImageResult, QueueStatus };
 const STYLE_PRESETS: Record<string, string> = {
   realistic: "photorealistic, highly detailed, 8k, professional photography",
   anime: "anime style, vibrant colors, studio ghibli inspired, detailed",
-  "digital-art":
-    "digital art, concept art, artstation trending, highly detailed",
+  "digital-art": "digital art, concept art, artstation trending, highly detailed",
   "oil-painting": "oil painting, classical art style, textured, masterpiece",
   watercolor: "watercolor painting, soft colors, artistic, flowing",
   sketch: "pencil sketch, detailed line art, black and white, artistic",
-  "3d-render":
-    "3d render, octane render, unreal engine, highly detailed, volumetric lighting",
+  "3d-render": "3d render, octane render, unreal engine, highly detailed, volumetric lighting",
 };
 
 /**
@@ -553,8 +546,7 @@ export async function executeImageGenerationTool(
   if (!isAvailable) {
     return {
       success: false,
-      message:
-        "Image generation service is currently unavailable. Please try again later.",
+      message: "Image generation service is currently unavailable. Please try again later.",
     };
   }
 
@@ -600,8 +592,7 @@ export async function executeImageGenerationTool(
       filename: result.filename,
     };
   } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
     return {
       success: false,
       message: `Image generation failed: ${errorMessage}`,

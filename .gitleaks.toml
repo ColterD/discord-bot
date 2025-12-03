@@ -1,0 +1,33 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks
+
+[extend]
+useDefault = true
+
+# Project-specific allowlist
+[[allowlists]]
+description = "Ignore test fixtures and examples"
+paths = [
+    '''\.env\.example$''',
+    '''tests/fixtures/.*''',
+    '''.*\.test\.(ts|js)$''',
+]
+
+# Ignore placeholder tokens in documentation
+[[allowlists]]
+description = "Ignore placeholder tokens"
+regexTarget = "match"
+regexes = [
+    '''your_.*_here''',
+    '''your-.*-here''',
+    '''<your.*>''',
+    '''EXAMPLE_.*''',
+]
+
+# Ignore npm package registry URLs that might look like tokens
+[[allowlists]]
+description = "Ignore npm registry URLs"
+regexTarget = "match"
+regexes = [
+    '''registry\.npmjs\.org''',
+]

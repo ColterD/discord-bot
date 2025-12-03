@@ -28,15 +28,14 @@ export interface CacheClient {
  * In-memory fallback cache for when Valkey is unavailable
  */
 export class InMemoryCache implements CacheClient {
-  private store = new Map<
-    string,
-    { value: string; expiresAt: number | null }
-  >();
+  private store = new Map<string, { value: string; expiresAt: number | null }>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     // Cleanup expired keys every 60 seconds
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+    this.cleanupInterval = setInterval(() => {
+      this.cleanup();
+    }, 60000);
   }
 
   private cleanup(): void {
@@ -76,9 +75,7 @@ export class InMemoryCache implements CacheClient {
 
   async keys(pattern: string): Promise<string[]> {
     // Simple pattern matching (supports * wildcard)
-    const regex = new RegExp(
-      "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
-    );
+    const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
     const matches: string[] = [];
     const now = Date.now();
 
@@ -245,10 +242,7 @@ class CacheManager {
 
   async initialize(): Promise<void> {
     try {
-      const valkeyCache = new ValkeyCache(
-        config.valkey.url,
-        config.valkey.keyPrefix
-      );
+      const valkeyCache = new ValkeyCache(config.valkey.url, config.valkey.keyPrefix);
       await valkeyCache.connect();
       this.cache = valkeyCache;
       this.usingFallback = false;

@@ -6,10 +6,7 @@
 import axios from "axios";
 import { config } from "../../config.js";
 import { createLogger } from "../../utils/logger.js";
-import {
-  conversationStore,
-  type ConversationMessage,
-} from "./conversation-store.js";
+import { conversationStore, type ConversationMessage } from "./conversation-store.js";
 
 const log = createLogger("SessionSummarizer");
 
@@ -77,11 +74,7 @@ export class SessionSummarizer {
       try {
         const summary = await this.generateSummary(task.messages);
         // Store the summary back in the conversation
-        await conversationStore.markSummarized(
-          task.userId,
-          task.channelId,
-          summary
-        );
+        await conversationStore.markSummarized(task.userId, task.channelId, summary);
         task.resolve(summary);
       } catch (error) {
         log.error(
@@ -99,9 +92,7 @@ export class SessionSummarizer {
   /**
    * Generate a summary using the summarization model (CPU-only)
    */
-  private async generateSummary(
-    messages: ConversationMessage[]
-  ): Promise<string> {
+  private async generateSummary(messages: ConversationMessage[]): Promise<string> {
     // Format messages for the summarization prompt
     const formattedMessages = messages
       .filter((m) => m.role !== "system")
@@ -164,10 +155,7 @@ Summary:`;
     if (!shouldSummarize) return;
 
     try {
-      const messages = await conversationStore.getRecentMessages(
-        userId,
-        channelId
-      );
+      const messages = await conversationStore.getRecentMessages(userId, channelId);
 
       if (messages.length < 3) {
         // Not enough messages to summarize
@@ -186,8 +174,7 @@ Summary:`;
       });
     } catch (error) {
       log.error(
-        "Error checking summarization: " +
-          (error instanceof Error ? error.message : String(error)),
+        "Error checking summarization: " + (error instanceof Error ? error.message : String(error)),
         error
       );
     }

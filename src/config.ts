@@ -69,10 +69,7 @@ export const config = {
   valkey: {
     url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
     // Conversation TTL (30 minutes of inactivity)
-    conversationTtlMs: parseInt(
-      process.env.VALKEY_CONVERSATION_TTL_MS ?? "1800000",
-      10
-    ),
+    conversationTtlMs: parseInt(process.env.VALKEY_CONVERSATION_TTL_MS ?? "1800000", 10),
     // Session prefix for namespacing
     keyPrefix: process.env.VALKEY_KEY_PREFIX ?? "discord-bot:",
   },
@@ -95,19 +92,10 @@ export const config = {
   // Memory Configuration (Mem0 + Three-tier architecture)
   memory: {
     // Summarization triggers
-    summarizeAfterMessages: parseInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15",
-      10
-    ),
-    summarizeAfterIdleMs: parseInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000",
-      10
-    ), // 30 minutes
+    summarizeAfterMessages: parseInt(process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15", 10),
+    summarizeAfterIdleMs: parseInt(process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000", 10), // 30 minutes
     // Context window allocation
-    maxContextTokens: parseInt(
-      process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "4096",
-      10
-    ),
+    maxContextTokens: parseInt(process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "4096", 10),
     // Tier allocation percentages
     tierAllocation: {
       activeContext: 0.5, // 50% for current conversation
@@ -121,15 +109,9 @@ export const config = {
     // Config file location
     configPath: process.env.MCP_CONFIG_PATH ?? "./mcp-servers.json",
     // Connection timeout
-    connectionTimeoutMs: parseInt(
-      process.env.MCP_CONNECTION_TIMEOUT_MS ?? "30000",
-      10
-    ),
+    connectionTimeoutMs: parseInt(process.env.MCP_CONNECTION_TIMEOUT_MS ?? "30000", 10),
     // Request timeout
-    requestTimeoutMs: parseInt(
-      process.env.MCP_REQUEST_TIMEOUT_MS ?? "60000",
-      10
-    ),
+    requestTimeoutMs: parseInt(process.env.MCP_REQUEST_TIMEOUT_MS ?? "60000", 10),
   },
 
   // Security Configuration
@@ -137,17 +119,13 @@ export const config = {
     // Owner user IDs (comma-separated in env)
     ownerIds: (process.env.BOT_OWNER_IDS ?? "").split(",").filter(Boolean),
     adminIds: (process.env.BOT_ADMIN_IDS ?? "").split(",").filter(Boolean),
-    moderatorIds: (process.env.BOT_MODERATOR_IDS ?? "")
-      .split(",")
-      .filter(Boolean),
+    moderatorIds: (process.env.BOT_MODERATOR_IDS ?? "").split(",").filter(Boolean),
 
     // Impersonation detection
     impersonation: {
       enabled: process.env.SECURITY_IMPERSONATION_ENABLED !== "false",
       // Similarity threshold for name matching (0.0-1.0)
-      similarityThreshold: parseFloat(
-        process.env.SECURITY_SIMILARITY_THRESHOLD ?? "0.7"
-      ),
+      similarityThreshold: parseFloat(process.env.SECURITY_SIMILARITY_THRESHOLD ?? "0.7"),
       // Patterns that indicate impersonation attempts
       suspiciousPatterns: [
         /pretend\s+(to\s+)?be/i,
@@ -167,12 +145,7 @@ export const config = {
       // Always blocked tools (even for owners must use explicit override)
       alwaysBlocked: ["filesystem_delete", "filesystem_write"],
       // Owner-only tools (completely hidden from non-owners)
-      ownerOnly: [
-        "filesystem_read",
-        "filesystem_list",
-        "execute_command",
-        "mcp_server_restart",
-      ],
+      ownerOnly: ["filesystem_read", "filesystem_list", "execute_command", "mcp_server_restart"],
       // Admin+ tools
       adminOnly: ["user_ban", "user_kick", "channel_purge"],
       // Moderator+ tools

@@ -41,8 +41,7 @@ const PII_PATTERNS = [
 const MALICIOUS_PATTERNS = [
   // Prompt injection attempts
   {
-    pattern:
-      /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/i,
+    pattern: /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/i,
     severity: "high",
     name: "prompt_injection",
   },
@@ -52,14 +51,12 @@ const MALICIOUS_PATTERNS = [
     name: "prompt_injection",
   },
   {
-    pattern:
-      /forget\s+(everything|all|your)\s+(you\s+)?(know|learned|were\s+told)/i,
+    pattern: /forget\s+(everything|all|your)\s+(you\s+)?(know|learned|were\s+told)/i,
     severity: "high",
     name: "prompt_injection",
   },
   {
-    pattern:
-      /you\s+are\s+now\s+(in\s+)?(?:a\s+)?(?:new|different|DAN|jailbreak)/i,
+    pattern: /you\s+are\s+now\s+(in\s+)?(?:a\s+)?(?:new|different|DAN|jailbreak)/i,
     severity: "high",
     name: "jailbreak",
   },
@@ -76,21 +73,18 @@ const MALICIOUS_PATTERNS = [
     name: "prompt_extraction",
   },
   {
-    pattern:
-      /what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:instructions?|prompts?)/i,
+    pattern: /what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:instructions?|prompts?)/i,
     severity: "medium",
     name: "prompt_extraction",
   },
   // Roleplay escapes
   {
-    pattern:
-      /pretend\s+(?:you\s+)?(?:are|have)\s+no\s+(?:restrictions?|limits?|rules)/i,
+    pattern: /pretend\s+(?:you\s+)?(?:are|have)\s+no\s+(?:restrictions?|limits?|rules)/i,
     severity: "medium",
     name: "roleplay_escape",
   },
   {
-    pattern:
-      /act\s+as\s+(?:if\s+)?you\s+(?:have|had)\s+no\s+(?:guidelines|ethics)/i,
+    pattern: /act\s+as\s+(?:if\s+)?you\s+(?:have|had)\s+no\s+(?:guidelines|ethics)/i,
     severity: "medium",
     name: "roleplay_escape",
   },
@@ -241,7 +235,7 @@ export function escapeMarkdown(text: string): string {
  * @param maxLength - Maximum length (default 2000 for Discord)
  * @returns Truncated text
  */
-export function truncateText(text: string, maxLength: number = 2000): string {
+export function truncateText(text: string, maxLength = 2000): string {
   if (!text || text.length <= maxLength) return text;
   return text.slice(0, maxLength - 3) + "...";
 }
@@ -284,7 +278,7 @@ export function unwrapUserInput(input: string): string {
     return "";
   }
 
-  const match = input.match(/<user_input>\n?([\s\S]*?)\n?<\/user_input>/);
+  const match = /<user_input>\n?([\s\S]*?)\n?<\/user_input>/.exec(input);
   return match?.[1] ?? input;
 }
 
@@ -327,9 +321,7 @@ export function validateLLMOutput(output: string): OutputValidationResult {
     }
 
     if (pattern.test(sanitized)) {
-      issuesFound.push(
-        `Suspicious pattern detected: ${pattern.source.slice(0, 30)}`
-      );
+      issuesFound.push(`Suspicious pattern detected: ${pattern.source.slice(0, 30)}`);
       // Remove the suspicious content
       sanitized = sanitized.replace(pattern, "[REMOVED]");
     }
@@ -394,8 +386,7 @@ const TOOL_ABUSE_PATTERNS = [
   },
   // Windows system path access
   {
-    pattern:
-      /^[A-Za-z]:\\(?:Windows|Program Files|System32|Users\\[^\\]+\\AppData)/i,
+    pattern: /^[A-Za-z]:\\(?:Windows|Program Files|System32|Users\\[^\\]+\\AppData)/i,
     name: "windows_system_access",
     severity: "high" as const,
     message: "Windows system path access attempt detected",
@@ -409,8 +400,7 @@ const TOOL_ABUSE_PATTERNS = [
   },
   // SQL injection patterns
   {
-    pattern:
-      /(?:UNION\s+SELECT|DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+.+\s+SET)/i,
+    pattern: /(?:UNION\s+SELECT|DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+.+\s+SET)/i,
     name: "sql_injection",
     severity: "high" as const,
     message: "SQL injection pattern detected",
@@ -493,11 +483,7 @@ export function validateToolRequest(
   args: Record<string, unknown>
 ): ToolValidationResult {
   // Validate tool name
-  if (
-    !toolName ||
-    typeof toolName !== "string" ||
-    !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(toolName)
-  ) {
+  if (!toolName || typeof toolName !== "string" || !/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(toolName)) {
     return {
       valid: false,
       blocked: true,
@@ -528,11 +514,8 @@ export function validateToolRequest(
       }
 
       // Check for dangerous file extensions in path-like arguments
-      if (
-        key.toLowerCase().includes("path") ||
-        key.toLowerCase().includes("file")
-      ) {
-        const ext = value.toLowerCase().match(/\.[a-z0-9]+$/)?.[0];
+      if (key.toLowerCase().includes("path") || key.toLowerCase().includes("file")) {
+        const ext = /\.[a-z0-9]+$/.exec(value.toLowerCase())?.[0];
         if (ext && DANGEROUS_EXTENSIONS.has(ext)) {
           return {
             valid: false,
@@ -584,7 +567,7 @@ export function isUrlSafe(url: string): { safe: boolean; reason?: string } {
       hostname === "::1" ||
       hostname.startsWith("192.168.") ||
       hostname.startsWith("10.") ||
-      hostname.match(/^172\.(1[6-9]|2[0-9]|3[01])\./) ||
+      /^172\.(1[6-9]|2[0-9]|3[01])\./.exec(hostname) ||
       hostname.endsWith(".local") ||
       hostname.endsWith(".internal")
     ) {

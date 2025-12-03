@@ -7,10 +7,7 @@
  */
 
 import { config } from "../config.js";
-import {
-  PermissionLevel,
-  getUserPermissionLevel,
-} from "../guards/owner.guard.js";
+import { PermissionLevel, getUserPermissionLevel } from "../guards/owner.guard.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ToolPermissions");
@@ -77,10 +74,7 @@ export function getToolPermission(toolName: string): ToolPermission {
 /**
  * Check if a user can access a tool
  */
-export function checkToolAccess(
-  userId: string,
-  toolName: string
-): ToolAccessResult {
+export function checkToolAccess(userId: string, toolName: string): ToolAccessResult {
   const userLevel = getUserPermissionLevel(userId);
   const toolPermission = getToolPermission(toolName);
 
@@ -154,10 +148,7 @@ export function checkToolAccess(
  * Filter a list of tools to only those visible to a user
  * Owner-only tools are completely removed for non-owners
  */
-export function filterToolsForUser<T extends { name: string }>(
-  tools: T[],
-  userId: string
-): T[] {
+export function filterToolsForUser<T extends { name: string }>(tools: T[], userId: string): T[] {
   return tools.filter((tool) => {
     const access = checkToolAccess(userId, tool.name);
     return access.visible;
@@ -180,19 +171,11 @@ export function getExecutableToolsForUser<T extends { name: string }>(
 /**
  * Log a tool access attempt
  */
-export function logToolAccess(
-  userId: string,
-  toolName: string,
-  result: ToolAccessResult
-): void {
+export function logToolAccess(userId: string, toolName: string, result: ToolAccessResult): void {
   if (result.allowed) {
     log.debug(`User ${userId} accessed tool ${toolName}: ${result.reason}`);
   } else {
-    log.info(
-      `User ${userId} denied access to tool ${toolName}: ${
-        result.reason || "hidden tool"
-      }`
-    );
+    log.info(`User ${userId} denied access to tool ${toolName}: ${result.reason || "hidden tool"}`);
   }
 }
 

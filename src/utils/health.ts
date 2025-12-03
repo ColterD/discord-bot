@@ -25,10 +25,7 @@ interface ServiceConfig {
 /**
  * Check if a single service is healthy
  */
-async function checkService(
-  service: ServiceConfig,
-  timeout: number = 5000
-): Promise<HealthCheckResult> {
+async function checkService(service: ServiceConfig, timeout = 5000): Promise<HealthCheckResult> {
   const startTime = Date.now();
   const url = `${service.url}${service.path ?? ""}`;
 
@@ -69,8 +66,8 @@ async function checkService(
  */
 async function checkWithRetry(
   service: ServiceConfig,
-  maxRetries: number = 5,
-  baseDelayMs: number = 2000
+  maxRetries = 5,
+  baseDelayMs = 2000
 ): Promise<HealthCheckResult> {
   let lastResult: HealthCheckResult | null = null;
 
@@ -87,9 +84,7 @@ async function checkWithRetry(
     if (attempt < maxRetries) {
       const delay = baseDelayMs * Math.pow(1.5, attempt - 1);
       log.warn(
-        `${
-          service.name
-        } not ready (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(
+        `${service.name} not ready (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(
           delay
         )}ms...`
       );
@@ -136,10 +131,7 @@ function getServiceConfigs(): ServiceConfig[] {
  * Wait for all services to be healthy
  * Returns true if all required services are healthy
  */
-export async function waitForServices(
-  maxRetries: number = 10,
-  retryDelayMs: number = 2000
-): Promise<boolean> {
+export async function waitForServices(maxRetries = 10, retryDelayMs = 2000): Promise<boolean> {
   log.info("Checking service health...");
 
   const services = getServiceConfigs();
@@ -151,16 +143,12 @@ export async function waitForServices(
     results.push(result);
 
     if (!result.healthy && !service.optional) {
-      log.error(
-        `Required service ${service.name} is not healthy: ${result.error}`
-      );
+      log.error(`Required service ${service.name} is not healthy: ${result.error}`);
       return false;
     }
 
     if (!result.healthy && service.optional) {
-      log.warn(
-        `Optional service ${service.name} is not healthy: ${result.error}`
-      );
+      log.warn(`Optional service ${service.name} is not healthy: ${result.error}`);
     }
   }
 
@@ -184,9 +172,7 @@ export async function waitForServices(
  */
 export async function quickHealthCheck(): Promise<HealthCheckResult[]> {
   const services = getServiceConfigs();
-  const results = await Promise.all(
-    services.map((service) => checkService(service))
-  );
+  const results = await Promise.all(services.map((service) => checkService(service)));
   return results;
 }
 

@@ -149,9 +149,7 @@ export class AgentService {
             role: "tool",
             content: `Error: Tool "${
               toolCall.name
-            }" is not available. Available tools: ${AGENT_TOOLS.map(
-              (t) => t.name
-            ).join(", ")}`,
+            }" is not available. Available tools: ${AGENT_TOOLS.map((t) => t.name).join(", ")}`,
           });
         }
       } else {
@@ -236,19 +234,13 @@ Do not include raw JSON tool-calls in your final response.`;
           );
 
         case "get_time":
-          return await this.toolGetTime(
-            toolCall.arguments.timezone as string | undefined
-          );
+          return await this.toolGetTime(toolCall.arguments.timezone as string | undefined);
 
         case "calculate":
-          return await this.toolCalculate(
-            toolCall.arguments.expression as string
-          );
+          return await this.toolCalculate(toolCall.arguments.expression as string);
 
         case "wikipedia_summary":
-          return await this.toolWikipediaSummary(
-            toolCall.arguments.topic as string
-          );
+          return await this.toolWikipediaSummary(toolCall.arguments.topic as string);
 
         case "think":
           return {
@@ -277,10 +269,7 @@ Do not include raw JSON tool-calls in your final response.`;
   /**
    * Web search tool - uses DuckDuckGo instant answer API
    */
-  private async toolWebSearch(
-    query: string,
-    maxResults = 5
-  ): Promise<ToolResult> {
+  private async toolWebSearch(query: string, maxResults = 5): Promise<ToolResult> {
     try {
       const trimmedQuery = query?.trim() ?? "";
 
@@ -315,7 +304,7 @@ Do not include raw JSON tool-calls in your final response.`;
       const data = response.data as {
         AbstractText?: string;
         AbstractSource?: string;
-        RelatedTopics?: Array<{ Text?: string }>;
+        RelatedTopics?: { Text?: string }[];
       };
 
       let result = "";
@@ -343,10 +332,7 @@ Do not include raw JSON tool-calls in your final response.`;
 
       return { success: true, result };
     } catch (error) {
-      logger.error(
-        "Web search failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      logger.error("Web search failed", error instanceof Error ? error.message : "Unknown error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -366,10 +352,10 @@ Do not include raw JSON tool-calls in your final response.`;
       const parts = ip.split(".").map(Number);
       if (parts.length !== 4) return false;
 
-      const a = parts[0] as number;
-      const b = parts[1] as number;
-      const c = parts[2] as number;
-      const d = parts[3] as number;
+      const a = parts[0]!;
+      const b = parts[1]!;
+      const c = parts[2]!;
+      const d = parts[3]!;
 
       // Validate each octet
       if ([a, b, c, d].some((n) => isNaN(n) || n < 0 || n > 255)) {
@@ -501,8 +487,7 @@ Do not include raw JSON tool-calls in your final response.`;
         if (this.isPrivateIp(parsedUrl.hostname)) {
           return {
             success: false,
-            error:
-              "Fetching URLs to private or internal networks is not allowed.",
+            error: "Fetching URLs to private or internal networks is not allowed.",
           };
         }
       } else {
@@ -512,8 +497,7 @@ Do not include raw JSON tool-calls in your final response.`;
           if (addresses.some((addr) => this.isPrivateIp(addr.address))) {
             return {
               success: false,
-              error:
-                "Fetching URLs to private or internal networks is not allowed.",
+              error: "Fetching URLs to private or internal networks is not allowed.",
             };
           }
         } catch {
@@ -536,7 +520,7 @@ Do not include raw JSON tool-calls in your final response.`;
       });
 
       // Extract text content (basic HTML stripping)
-      let content: string = "";
+      let content = "";
       if (typeof response.data === "string") {
         content = response.data;
         // Remove script and style tags
@@ -555,10 +539,7 @@ Do not include raw JSON tool-calls in your final response.`;
 
       return { success: true, result: content };
     } catch (error) {
-      logger.error(
-        "Fetch URL failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      logger.error("Fetch URL failed", error instanceof Error ? error.message : "Unknown error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -569,10 +550,7 @@ Do not include raw JSON tool-calls in your final response.`;
   /**
    * Search arXiv for papers
    */
-  private async toolSearchArxiv(
-    query: string,
-    maxResults = 5
-  ): Promise<ToolResult> {
+  private async toolSearchArxiv(query: string, maxResults = 5): Promise<ToolResult> {
     try {
       const trimmedQuery = query?.trim() ?? "";
 
@@ -660,15 +638,10 @@ Do not include raw JSON tool-calls in your final response.`;
 
       return {
         success: true,
-        result: `Found ${entries.length} papers:\n\n${entries.join(
-          "\n\n---\n\n"
-        )}`,
+        result: `Found ${entries.length} papers:\n\n${entries.join("\n\n---\n\n")}`,
       };
     } catch (error) {
-      logger.error(
-        "arXiv search failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      logger.error("arXiv search failed", error instanceof Error ? error.message : "Unknown error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -704,16 +677,10 @@ Do not include raw JSON tool-calls in your final response.`;
         result: `Current time in ${tz}: ${formatter.format(now)}`,
       };
     } catch (error) {
-      logger.error(
-        "Get time failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      logger.error("Get time failed", error instanceof Error ? error.message : "Unknown error");
       return {
         success: false,
-        error:
-          error instanceof Error
-            ? "Invalid timezone specified."
-            : "Unknown error",
+        error: error instanceof Error ? "Invalid timezone specified." : "Unknown error",
       };
     }
   }
@@ -753,10 +720,7 @@ Do not include raw JSON tool-calls in your final response.`;
         result: `${expression} = ${result}`,
       };
     } catch (error) {
-      logger.error(
-        "Calculation failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
+      logger.error("Calculation failed", error instanceof Error ? error.message : "Unknown error");
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
@@ -798,9 +762,7 @@ Do not include raw JSON tool-calls in your final response.`;
       }
 
       const response = await axios.get(
-        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(
-          trimmedTopic
-        )}`,
+        `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(trimmedTopic)}`,
         {
           timeout: TOOL_TIMEOUT,
           headers: {

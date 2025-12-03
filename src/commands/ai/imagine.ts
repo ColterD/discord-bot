@@ -6,15 +6,12 @@
 import {
   ApplicationCommandOptionType,
   AttachmentBuilder,
-  CommandInteraction,
+  type CommandInteraction,
   EmbedBuilder,
 } from "discord.js";
 import { Discord, Slash, SlashOption, SlashChoice } from "discordx";
 import { getImageService } from "../../ai/image-service.js";
-import {
-  getRateLimiter,
-  buildRateLimitFooter,
-} from "../../utils/rate-limiter.js";
+import { getRateLimiter, buildRateLimitFooter } from "../../utils/rate-limiter.js";
 import { validatePrompt, sanitizeInput } from "../../utils/security.js";
 import config from "../../config.js";
 
@@ -58,11 +55,7 @@ export class ImagineCommand {
     const userId = interaction.user.id;
 
     // Check rate limit
-    const rateLimitResult = this.rateLimiter.checkRateLimit(
-      userId,
-      channelId,
-      isDM
-    );
+    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
     if (!rateLimitResult.allowed) {
       await interaction.reply({
         content: rateLimitResult.message ?? "Rate limited. Please wait.",
@@ -85,11 +78,7 @@ export class ImagineCommand {
     const sanitized = sanitizeInput(prompt);
     if (sanitized.modified) {
       // Log but don't tell user what was sanitized
-      console.log(
-        `[Imagine] Sanitized PII from user ${userId}: ${sanitized.piiFound.join(
-          ", "
-        )}`
-      );
+      console.log(`[Imagine] Sanitized PII from user ${userId}: ${sanitized.piiFound.join(", ")}`);
     }
 
     await interaction.deferReply();
@@ -119,8 +108,7 @@ export class ImagineCommand {
         .setColor(config.colors.warning)
         .setTitle("⏳ Queue Full")
         .setDescription(
-          canAccept.reason ??
-            "The image queue is full. Please wait a moment and try again."
+          canAccept.reason ?? "The image queue is full. Please wait a moment and try again."
         )
         .setTimestamp();
 
@@ -136,9 +124,7 @@ export class ImagineCommand {
       .setColor(config.colors.info)
       .setTitle("🎨 Generating Image...")
       .setDescription(
-        `**Prompt:** ${sanitized.text.slice(0, 200)}${
-          sanitized.text.length > 200 ? "..." : ""
-        }`
+        `**Prompt:** ${sanitized.text.slice(0, 200)}${sanitized.text.length > 200 ? "..." : ""}`
       )
       .addFields(
         {
@@ -156,15 +142,11 @@ export class ImagineCommand {
     try {
       // Generate the image
       const startTime = Date.now();
-      const result = await this.imageService.generateImage(
-        sanitized.text,
-        userId,
-        {
-          width: dimensions.width,
-          height: dimensions.height,
-          steps: 4, // Z-Image-Turbo is optimized for few steps
-        }
-      );
+      const result = await this.imageService.generateImage(sanitized.text, userId, {
+        width: dimensions.width,
+        height: dimensions.height,
+        steps: 4, // Z-Image-Turbo is optimized for few steps
+      });
 
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
 
@@ -172,9 +154,7 @@ export class ImagineCommand {
         const errorEmbed = new EmbedBuilder()
           .setColor(config.colors.error)
           .setTitle("❌ Generation Failed")
-          .setDescription(
-            result.error ?? "Failed to generate image. Please try again."
-          )
+          .setDescription(result.error ?? "Failed to generate image. Please try again.")
           .setTimestamp();
 
         await interaction.editReply({ embeds: [errorEmbed] });
@@ -218,8 +198,7 @@ export class ImagineCommand {
         files: [attachment],
       });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       const errorEmbed = new EmbedBuilder()
         .setColor(config.colors.error)
         .setTitle("❌ Generation Error")
@@ -243,9 +222,7 @@ export class ImagineCommand {
       const embed = new EmbedBuilder()
         .setColor(config.colors.error)
         .setTitle("🔴 Image Service Offline")
-        .setDescription(
-          "The ComfyUI image generation service is not responding."
-        )
+        .setDescription("The ComfyUI image generation service is not responding.")
         .setTimestamp();
 
       await interaction.editReply({ embeds: [embed] });
@@ -276,9 +253,7 @@ export class ImagineCommand {
     if (vramStatus) {
       const usedGB = (vramStatus.used / 1024 / 1024 / 1024).toFixed(1);
       const totalGB = (vramStatus.total / 1024 / 1024 / 1024).toFixed(1);
-      const usedPercent = ((vramStatus.used / vramStatus.total) * 100).toFixed(
-        0
-      );
+      const usedPercent = ((vramStatus.used / vramStatus.total) * 100).toFixed(0);
 
       statusEmbed.addFields({
         name: "VRAM",

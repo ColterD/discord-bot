@@ -3,21 +3,17 @@ import { Discord, On } from "discordx";
 import {
   Events,
   ChannelType,
-  DMChannel,
-  TextChannel,
-  NewsChannel,
-  ThreadChannel,
-  VoiceChannel,
-  StageChannel,
+  type DMChannel,
+  type TextChannel,
+  type NewsChannel,
+  type ThreadChannel,
+  type VoiceChannel,
+  type StageChannel,
   AttachmentBuilder,
 } from "discord.js";
 import { client } from "../index.js";
 import { getConversationService } from "../ai/conversation.js";
-import {
-  getRateLimiter,
-  getChannelQueue,
-  formatCooldown,
-} from "../utils/rate-limiter.js";
+import { getRateLimiter, getChannelQueue, formatCooldown } from "../utils/rate-limiter.js";
 import { recordResponseTime } from "../utils/presence.js";
 import { createLogger } from "../utils/logger.js";
 import { config } from "../config.js";
@@ -94,11 +90,7 @@ export class MessageEvent {
     }
 
     // Check rate limit (only enforced in channels, lenient in DMs)
-    const cooldownRemaining = rateLimiter.checkCooldown(
-      message.author.id,
-      message.channelId,
-      isDM
-    );
+    const cooldownRemaining = rateLimiter.checkCooldown(message.author.id, message.channelId, isDM);
 
     if (cooldownRemaining > 0 && !isDM) {
       // User is on cooldown in channel
@@ -122,8 +114,7 @@ export class MessageEvent {
       if (channelQueue.isQueueFull(message.channelId)) {
         try {
           await message.reply({
-            content:
-              "🚦 I'm a bit busy right now! Please try again in a moment.",
+            content: "🚦 I'm a bit busy right now! Please try again in a moment.",
             allowedMentions: { repliedUser: false },
           });
         } catch {
@@ -182,10 +173,7 @@ export class MessageEvent {
       let content = message.content;
       const botMention = `<@${client.user?.id}>`;
       const botMentionNick = `<@!${client.user?.id}>`;
-      content = content
-        .replace(botMention, "")
-        .replace(botMentionNick, "")
-        .trim();
+      content = content.replace(botMention, "").replace(botMentionNick, "").trim();
 
       if (!content) {
         // Just a mention with no content
@@ -205,9 +193,7 @@ export class MessageEvent {
       if (config.llm.useOrchestrator) {
         // Use Orchestrator for tool-aware, security-enhanced responses
         const member = message.guild
-          ? await message.guild.members
-              .fetch(message.author.id)
-              .catch(() => null)
+          ? await message.guild.members.fetch(message.author.id).catch(() => null)
           : null;
 
         const result = await conversationService.chatWithOrchestrator(
@@ -221,8 +207,7 @@ export class MessageEvent {
         if (result.blocked) {
           stopTyping();
           await message.reply({
-            content:
-              "🛡️ I couldn't process that message. Could you rephrase it?",
+            content: "🛡️ I couldn't process that message. Could you rephrase it?",
             allowedMentions: { repliedUser: false },
           });
           if (!isDM) channelQueue.releaseSlot(message.channelId);
@@ -299,9 +284,7 @@ export class MessageEvent {
       // For DMs, let them know something went wrong
       if (isDM) {
         try {
-          await message.reply(
-            "😅 Oops, something went wrong on my end. Please try again!"
-          );
+          await message.reply("😅 Oops, something went wrong on my end. Please try again!");
         } catch {
           // Ignore
         }
@@ -363,10 +346,7 @@ export class MessageEvent {
   }
 
   @On({ event: Events.MessageReactionAdd })
-  async onReactionAdd([
-    reaction,
-    user,
-  ]: ArgsOf<"messageReactionAdd">): Promise<void> {
+  async onReactionAdd([reaction, user]: ArgsOf<"messageReactionAdd">): Promise<void> {
     // Execute reaction handlers
     await client.executeReaction(reaction, user);
   }

@@ -1,4 +1,4 @@
-import { CommandInteraction, EmbedBuilder } from "discord.js";
+import { type CommandInteraction, EmbedBuilder } from "discord.js";
 import { Discord, Slash } from "discordx";
 import config from "../../config.js";
 

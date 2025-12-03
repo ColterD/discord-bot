@@ -27,9 +27,9 @@ const MAX_CONTEXT_MESSAGES = 20;
 export class ConversationService {
   private aiService: AIService;
   private agentService: AgentService;
-  private conversations: Map<string, ConversationContext> = new Map();
+  private conversations = new Map<string, ConversationContext>();
   private isAvailable: boolean | null = null;
-  private lastHealthCheck: number = 0;
+  private lastHealthCheck = 0;
   private healthCheckInterval = 30000; // Check every 30 seconds
 
   constructor() {
@@ -51,10 +51,7 @@ export class ConversationService {
     const now = Date.now();
 
     // Use cached result if recent
-    if (
-      this.isAvailable !== null &&
-      now - this.lastHealthCheck < this.healthCheckInterval
-    ) {
+    if (this.isAvailable !== null && now - this.lastHealthCheck < this.healthCheckInterval) {
       return this.isAvailable;
     }
 
@@ -93,11 +90,7 @@ export class ConversationService {
   /**
    * Add a message to conversation context
    */
-  private addToContext(
-    contextId: string,
-    role: "user" | "assistant",
-    content: string
-  ): void {
+  private addToContext(contextId: string, role: "user" | "assistant", content: string): void {
     const context = this.getContext(contextId);
     context.messages.push({
       role,
@@ -115,10 +108,7 @@ export class ConversationService {
   /**
    * Build conversation history for the LLM
    */
-  private buildConversationPrompt(
-    contextId: string,
-    newMessage: string
-  ): string {
+  private buildConversationPrompt(contextId: string, newMessage: string): string {
     const context = this.getContext(contextId);
 
     if (context.messages.length === 0) {
@@ -206,10 +196,7 @@ ${memoryContext}`;
    * @param task - Task description
    * @param userId - Discord user ID for memory isolation
    */
-  async runAgent(
-    task: string,
-    userId: string
-  ): Promise<{ response: string; toolsUsed: string[] }> {
+  async runAgent(task: string, userId: string): Promise<{ response: string; toolsUsed: string[] }> {
     const available = await this.checkAvailability();
     if (!available) {
       throw new Error("AI service is currently unavailable");

@@ -96,7 +96,7 @@ export function checkMemoryHealth(): "healthy" | "warning" | "critical" {
  * Start periodic memory monitoring
  * @param intervalMs - Check interval in milliseconds (default: 60 seconds)
  */
-export function startMemoryMonitor(intervalMs: number = 60000): void {
+export function startMemoryMonitor(intervalMs = 60000): void {
   if (monitorInterval) {
     log.debug("Memory monitor already running");
     return;
@@ -132,9 +132,7 @@ export function stopMemoryMonitor(): void {
 /**
  * Update memory thresholds
  */
-export function setMemoryThresholds(
-  newThresholds: Partial<MemoryThresholds>
-): void {
+export function setMemoryThresholds(newThresholds: Partial<MemoryThresholds>): void {
   thresholds = { ...thresholds, ...newThresholds };
   log.debug(
     `Memory thresholds updated: warning=${thresholds.warningPercent}%, critical=${thresholds.criticalPercent}%, maxHeap=${thresholds.maxHeapMB}MB`

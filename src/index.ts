@@ -63,12 +63,7 @@ export const client = new Client({
   ],
 
   // Partials for handling uncached data (reactions, DMs)
-  partials: [
-    Partials.Message,
-    Partials.Channel,
-    Partials.Reaction,
-    Partials.User,
-  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User],
 
   // Cache optimization - limit memory usage
   makeCache: Options.cacheWithLimits({
@@ -118,9 +113,7 @@ async function bootstrap(): Promise<void> {
   const extension = process.env.NODE_ENV === "production" ? "js" : "{ts,js}";
   log.info(`Loading modules with extension: ${extension}`);
   await importx(
-    `${dirname(
-      import.meta.url
-    )}/{commands,events,components,guards}/**/*.${extension}`
+    `${dirname(import.meta.url)}/{commands,events,components,guards}/**/*.${extension}`
   );
   log.info("Modules loaded successfully");
 
@@ -167,10 +160,7 @@ async function bootstrap(): Promise<void> {
     const aiService = getAIService();
     // Don't await - let it load in background while bot starts up
     aiService.preloadModel().catch((error) => {
-      log.warn(
-        "Model preload failed",
-        error instanceof Error ? error : undefined
-      );
+      log.warn("Model preload failed", error instanceof Error ? error : undefined);
     });
   }
 
@@ -186,8 +176,7 @@ async function bootstrap(): Promise<void> {
     const conversationService = getConversationService();
     const rateLimiter = getRateLimiter();
 
-    const conversationsCleared =
-      conversationService.cleanupExpiredConversations();
+    const conversationsCleared = conversationService.cleanupExpiredConversations();
     rateLimiter.cleanup();
 
     if (conversationsCleared > 0) {
@@ -235,10 +224,7 @@ async function shutdown(signal: string): Promise<void> {
     log.info("Shutdown complete");
     process.exit(0);
   } catch (error) {
-    log.error(
-      "Error during shutdown",
-      error instanceof Error ? error : undefined
-    );
+    log.error("Error during shutdown", error instanceof Error ? error : undefined);
     process.exit(1);
   }
 }

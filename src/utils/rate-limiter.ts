@@ -75,7 +75,7 @@ const CONFIG = {
  * Uses LRU eviction to bound memory usage
  */
 export class RateLimiter {
-  private cooldowns: Map<string, CooldownEntry> = new Map();
+  private cooldowns = new Map<string, CooldownEntry>();
 
   /**
    * Get the current number of tracked entries
@@ -91,9 +91,7 @@ export class RateLimiter {
     if (this.cooldowns.size <= CONFIG.maxEntries) return;
 
     // Sort by lastAccess and remove oldest entries
-    const entries = [...this.cooldowns.entries()].sort(
-      (a, b) => a[1].lastAccess - b[1].lastAccess
-    );
+    const entries = [...this.cooldowns.entries()].sort((a, b) => a[1].lastAccess - b[1].lastAccess);
 
     const toRemove = entries.slice(0, this.cooldowns.size - CONFIG.maxEntries);
     for (const [key] of toRemove) {
@@ -124,11 +122,7 @@ export class RateLimiter {
    * Advanced rate limit check with soft warnings and backoff
    * Returns detailed result including warnings and feedback
    */
-  checkRateLimit(
-    userId: string,
-    channelId: string,
-    isDM: boolean
-  ): RateLimitResult {
+  checkRateLimit(userId: string, channelId: string, isDM: boolean): RateLimitResult {
     const key = isDM ? `dm-${userId}` : `channel-${channelId}-${userId}`;
     const now = Date.now();
     let entry = this.cooldowns.get(key);
@@ -165,8 +159,7 @@ export class RateLimiter {
     let backoffMs = 0;
     if (CONFIG.backoffEnabled && entry.violations > 0) {
       backoffMs = Math.min(
-        CONFIG.backoffBaseMs *
-          Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
+        CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
         CONFIG.backoffMaxMs
       );
 
@@ -189,9 +182,7 @@ export class RateLimiter {
     // Check request count against limits
     const requestsUsed = entry.requestCount;
     const remaining = CONFIG.maxRequests - requestsUsed;
-    const softLimit = Math.floor(
-      CONFIG.maxRequests * CONFIG.softLimitThreshold
-    );
+    const softLimit = Math.floor(CONFIG.maxRequests * CONFIG.softLimitThreshold);
 
     // Hard limit reached
     if (requestsUsed >= CONFIG.maxRequests) {
@@ -209,8 +200,7 @@ export class RateLimiter {
         )}. (${entry.violations} violation${entry.violations > 1 ? "s" : ""})`,
         backoffMs: CONFIG.backoffEnabled
           ? Math.min(
-              CONFIG.backoffBaseMs *
-                Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
+              CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
               CONFIG.backoffMaxMs
             )
           : 0,
@@ -342,7 +332,7 @@ export class RateLimiter {
  * Channel Queue - manages concurrent requests per channel
  */
 export class ChannelQueue {
-  private channels: Map<string, ChannelState> = new Map();
+  private channels = new Map<string, ChannelState>();
 
   /**
    * Get or create channel state
@@ -387,11 +377,7 @@ export class ChannelQueue {
    * Acquire a slot to process a request
    * Returns immediately if slot available, or waits in queue
    */
-  async acquireSlot(
-    channelId: string,
-    userId: string,
-    messageId: string
-  ): Promise<boolean> {
+  async acquireSlot(channelId: string, userId: string, messageId: string): Promise<boolean> {
     const state = this.getChannelState(channelId);
 
     // Can process immediately
@@ -442,10 +428,7 @@ export class ChannelQueue {
     state.activeRequests = Math.max(0, state.activeRequests - 1);
 
     // Process next in queue
-    if (
-      state.queue.length > 0 &&
-      state.activeRequests < CONFIG.maxConcurrentPerChannel
-    ) {
+    if (state.queue.length > 0 && state.activeRequests < CONFIG.maxConcurrentPerChannel) {
       const next = state.queue.shift();
       if (next) {
         next.resolve();
@@ -515,11 +498,7 @@ export function formatCooldown(ms: number): string {
 /**
  * Build rate limit footer text for embeds
  */
-export function buildRateLimitFooter(
-  userId: string,
-  channelId: string,
-  isDM: boolean
-): string {
+export function buildRateLimitFooter(userId: string, channelId: string, isDM: boolean): string {
   const limiter = getRateLimiter();
   const stats = limiter.getStats(userId, channelId, isDM);
   return `📊 ${stats.remaining}/${stats.total} requests remaining`;

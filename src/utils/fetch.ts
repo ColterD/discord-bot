@@ -25,18 +25,16 @@ export async function fetchWithTimeout(
   url: string,
   options: RequestInit & { timeout?: number } = {}
 ): Promise<Response> {
-  const {
-    timeout = DEFAULT_TIMEOUT,
-    signal: externalSignal,
-    ...fetchOptions
-  } = options;
+  const { timeout = DEFAULT_TIMEOUT, signal: externalSignal, ...fetchOptions } = options;
 
   const controller = new AbortController();
   activeControllers.add(controller);
 
   // Combine with external signal if provided
   if (externalSignal) {
-    externalSignal.addEventListener("abort", () => controller.abort());
+    externalSignal.addEventListener("abort", () => {
+      controller.abort();
+    });
   }
 
   const timeoutId = setTimeout(() => {

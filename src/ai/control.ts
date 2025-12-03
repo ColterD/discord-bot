@@ -16,12 +16,11 @@ interface OllamaStatus {
 export class AIControlService {
   private ollamaHost: string;
   private modelName: string;
-  private manuallyDisabled: boolean = false;
+  private manuallyDisabled = false;
 
   constructor() {
     this.ollamaHost = process.env.OLLAMA_HOST || "http://localhost:11434";
-    this.modelName =
-      process.env.LLM_MODEL || "davidau/openai-gpt-oss-20b-abliterated";
+    this.modelName = process.env.LLM_MODEL || "davidau/openai-gpt-oss-20b-abliterated";
   }
 
   /**
@@ -61,12 +60,11 @@ export class AIControlService {
       }
 
       const data = (await response.json()) as {
-        models?: Array<{ name: string }>;
+        models?: { name: string }[];
       };
       const models = data.models || [];
       const modelLoaded = models.some(
-        (m) =>
-          m.name === this.modelName || m.name.startsWith(this.modelName + ":")
+        (m) => m.name === this.modelName || m.name.startsWith(this.modelName + ":")
       );
 
       return {
@@ -126,9 +124,7 @@ export class AIControlService {
     } catch (error) {
       return {
         success: false,
-        message: `Error loading model: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`,
+        message: `Error loading model: ${error instanceof Error ? error.message : "Unknown error"}`,
       };
     }
   }
@@ -162,7 +158,7 @@ export class AIControlService {
         success: true,
         message: `Model ${this.modelName} unloaded from GPU memory.`,
       };
-    } catch (error) {
+    } catch (_error) {
       // Connection refused usually means Ollama is not running, which is fine
       return {
         success: true,

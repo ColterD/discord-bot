@@ -1,5 +1,5 @@
 import {
-  StringSelectMenuInteraction,
+  type StringSelectMenuInteraction,
   ActionRowBuilder,
   StringSelectMenuBuilder,
   EmbedBuilder,
@@ -13,9 +13,7 @@ export class SelectMenuComponents {
    * Language selection for translation
    */
   @SelectMenuComponent({ id: "language_select" })
-  async handleLanguageSelect(
-    interaction: StringSelectMenuInteraction
-  ): Promise<void> {
+  async handleLanguageSelect(interaction: StringSelectMenuInteraction): Promise<void> {
     const selectedLanguage = interaction.values[0];
 
     await interaction.update({
@@ -28,9 +26,7 @@ export class SelectMenuComponents {
    * AI model selection
    */
   @SelectMenuComponent({ id: "model_select" })
-  async handleModelSelect(
-    interaction: StringSelectMenuInteraction
-  ): Promise<void> {
+  async handleModelSelect(interaction: StringSelectMenuInteraction): Promise<void> {
     const selectedModel = interaction.values[0];
 
     await interaction.update({
@@ -43,9 +39,7 @@ export class SelectMenuComponents {
    * Category selection for help
    */
   @SelectMenuComponent({ id: "help_category" })
-  async handleHelpCategory(
-    interaction: StringSelectMenuInteraction
-  ): Promise<void> {
+  async handleHelpCategory(interaction: StringSelectMenuInteraction): Promise<void> {
     const category = interaction.values[0];
     if (!category) {
       await interaction.update({
@@ -55,24 +49,22 @@ export class SelectMenuComponents {
       return;
     }
 
-    const categoryInfo: Record<string, { title: string; description: string }> =
-      {
-        utility: {
-          title: "🔧 Utility Commands",
-          description:
-            "`/ping` - Check latency\n`/info` - Bot information\n`/avatar` - Get user avatar\n`/server` - Server information",
-        },
-        moderation: {
-          title: "🛡️ Moderation Commands",
-          description:
-            "`/kick` - Kick a member\n`/ban` - Ban a member\n`/clear` - Clear messages",
-        },
-        ai: {
-          title: "🤖 AI Commands",
-          description:
-            "`/ask` - Ask the AI a question\n`/summarize` - Summarize text\n`/translate` - Translate text",
-        },
-      };
+    const categoryInfo: Record<string, { title: string; description: string }> = {
+      utility: {
+        title: "🔧 Utility Commands",
+        description:
+          "`/ping` - Check latency\n`/info` - Bot information\n`/avatar` - Get user avatar\n`/server` - Server information",
+      },
+      moderation: {
+        title: "🛡️ Moderation Commands",
+        description: "`/kick` - Kick a member\n`/ban` - Ban a member\n`/clear` - Clear messages",
+      },
+      ai: {
+        title: "🤖 AI Commands",
+        description:
+          "`/ask` - Ask the AI a question\n`/summarize` - Summarize text\n`/translate` - Translate text",
+      },
+    };
 
     const selectedCategory = categoryInfo[category];
     const info = selectedCategory ?? {

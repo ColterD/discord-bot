@@ -1,6 +1,6 @@
 import {
   ApplicationCommandOptionType,
-  CommandInteraction,
+  type CommandInteraction,
   EmbedBuilder,
   ChannelType,
 } from "discord.js";
@@ -21,8 +21,7 @@ export class UtilityCommands {
     });
 
     const roundtrip =
-      (sent?.message?.createdTimestamp ?? Date.now()) -
-      interaction.createdTimestamp;
+      (sent?.message?.createdTimestamp ?? Date.now()) - interaction.createdTimestamp;
     const wsLatency = interaction.client.ws.ping;
 
     const embed = new EmbedBuilder()
@@ -63,9 +62,7 @@ export class UtilityCommands {
         },
         {
           name: "Memory",
-          value: `${Math.round(
-            process.memoryUsage().heapUsed / 1024 / 1024
-          )}MB`,
+          value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
           inline: true,
         }
       )
@@ -168,9 +165,7 @@ export class UtilityCommands {
         },
         {
           name: "Last Check",
-          value: status.lastCheck
-            ? `<t:${Math.floor(status.lastCheck / 1000)}:R>`
-            : "Never",
+          value: status.lastCheck ? `<t:${Math.floor(status.lastCheck / 1000)}:R>` : "Never",
           inline: true,
         }
       )
@@ -200,8 +195,7 @@ export class UtilityCommands {
     conversationService.clearContext(contextId);
 
     await interaction.reply({
-      content:
-        "🧹 Conversation context cleared! I've forgotten our previous conversation.",
+      content: "🧹 Conversation context cleared! I've forgotten our previous conversation.",
       ephemeral: true,
     });
   }

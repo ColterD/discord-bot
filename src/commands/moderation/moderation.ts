@@ -1,8 +1,8 @@
 import {
   ApplicationCommandOptionType,
-  CommandInteraction,
+  type CommandInteraction,
   EmbedBuilder,
-  GuildMember,
+  type GuildMember,
   PermissionFlagsBits,
 } from "discord.js";
 import { Discord, Guard, Slash, SlashOption } from "discordx";
@@ -68,8 +68,8 @@ export class ModerationCommands {
         .setColor(config.colors.warning)
         .setTitle("👢 Member Kicked")
         .addFields(
-          { name: "Member", value: `${target.user.tag}`, inline: true },
-          { name: "Moderator", value: `${interaction.user.tag}`, inline: true },
+          { name: "Member", value: target.user.tag, inline: true },
+          { name: "Moderator", value: interaction.user.tag, inline: true },
           { name: "Reason", value: kickReason, inline: false }
         )
         .setTimestamp();
@@ -152,8 +152,8 @@ export class ModerationCommands {
         .setColor(config.colors.error)
         .setTitle("🔨 Member Banned")
         .addFields(
-          { name: "Member", value: `${target.user.tag}`, inline: true },
-          { name: "Moderator", value: `${interaction.user.tag}`, inline: true },
+          { name: "Member", value: target.user.tag, inline: true },
+          { name: "Moderator", value: interaction.user.tag, inline: true },
           { name: "Reason", value: banReason, inline: false }
         )
         .setTimestamp();
@@ -202,8 +202,7 @@ export class ModerationCommands {
       });
     } catch {
       await interaction.reply({
-        content:
-          "Failed to delete messages. Messages older than 14 days cannot be bulk deleted.",
+        content: "Failed to delete messages. Messages older than 14 days cannot be bulk deleted.",
         ephemeral: true,
       });
     }

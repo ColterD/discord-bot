@@ -8,11 +8,15 @@
     "start": "node dist/index.js",
     "dev": "tsx watch src/index.ts",
     "deploy": "tsx src/deploy-commands.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "clean": "del-cli dist",
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/integration/orchestrator.test.ts",
-    "test:integration": "tsx tests/integration/orchestrator.test.ts"
+    "test:integration": "tsx tests/integration/orchestrator.test.ts",
+    "prepare": "echo 'Run: pip install pre-commit && pre-commit install' || true"
   },
   "keywords": [
     "discord",
@@ -42,10 +46,15 @@
     "zod": "^3.25.67"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@types/node": "^24.10.1",
     "del-cli": "^6.0.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.7.4",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.48.1"
   },
   "overrides": {
     "mem0ai": {

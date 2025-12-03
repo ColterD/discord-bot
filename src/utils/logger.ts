@@ -42,9 +42,7 @@ const currentLevel: LogLevel = (() => {
     case "ERROR":
       return LogLevel.ERROR;
     default:
-      return process.env.NODE_ENV === "production"
-        ? LogLevel.INFO
-        : LogLevel.DEBUG;
+      return process.env.NODE_ENV === "production" ? LogLevel.INFO : LogLevel.DEBUG;
   }
 })();
 
@@ -68,12 +66,7 @@ function formatMessage(level: LogLevel, tag: string, message: string): string {
 /**
  * Log a message if it meets the current log level
  */
-function log(
-  level: LogLevel,
-  tag: string,
-  message: string,
-  error?: unknown
-): void {
+function log(level: LogLevel, tag: string, message: string, error?: unknown): void {
   if (level < currentLevel) return;
 
   const formattedMessage = formatMessage(level, tag, message);
@@ -104,12 +97,18 @@ function log(
  */
 export function createLogger(tag: string) {
   return {
-    debug: (message: string) => log(LogLevel.DEBUG, tag, message),
-    info: (message: string) => log(LogLevel.INFO, tag, message),
-    warn: (message: string, error?: unknown) =>
-      log(LogLevel.WARN, tag, message, error),
-    error: (message: string, error?: unknown) =>
-      log(LogLevel.ERROR, tag, message, error),
+    debug: (message: string) => {
+      log(LogLevel.DEBUG, tag, message);
+    },
+    info: (message: string) => {
+      log(LogLevel.INFO, tag, message);
+    },
+    warn: (message: string, error?: unknown) => {
+      log(LogLevel.WARN, tag, message, error);
+    },
+    error: (message: string, error?: unknown) => {
+      log(LogLevel.ERROR, tag, message, error);
+    },
   };
 }
 
@@ -117,12 +116,18 @@ export function createLogger(tag: string) {
  * Global logger instance for general use
  */
 export const logger = {
-  debug: (tag: string, message: string) => log(LogLevel.DEBUG, tag, message),
-  info: (tag: string, message: string) => log(LogLevel.INFO, tag, message),
-  warn: (tag: string, message: string, error?: unknown) =>
-    log(LogLevel.WARN, tag, message, error),
-  error: (tag: string, message: string, error?: unknown) =>
-    log(LogLevel.ERROR, tag, message, error),
+  debug: (tag: string, message: string) => {
+    log(LogLevel.DEBUG, tag, message);
+  },
+  info: (tag: string, message: string) => {
+    log(LogLevel.INFO, tag, message);
+  },
+  warn: (tag: string, message: string, error?: unknown) => {
+    log(LogLevel.WARN, tag, message, error);
+  },
+  error: (tag: string, message: string, error?: unknown) => {
+    log(LogLevel.ERROR, tag, message, error);
+  },
 };
 
 export default logger;

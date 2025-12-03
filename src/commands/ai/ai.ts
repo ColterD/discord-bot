@@ -1,30 +1,17 @@
 import {
   ApplicationCommandOptionType,
-  Attachment,
-  CommandInteraction,
+  type Attachment,
+  type CommandInteraction,
   EmbedBuilder,
-  MessageContextMenuCommandInteraction,
-  UserContextMenuCommandInteraction,
+  type MessageContextMenuCommandInteraction,
+  type UserContextMenuCommandInteraction,
   ApplicationCommandType,
 } from "discord.js";
-import {
-  Discord,
-  Slash,
-  SlashOption,
-  SlashChoice,
-  ContextMenu,
-} from "discordx";
+import { Discord, Slash, SlashOption, SlashChoice, ContextMenu } from "discordx";
 import { getAIService } from "../../ai/service.js";
 import { getMemoryManager } from "../../ai/memory/index.js";
-import {
-  getRateLimiter,
-  buildRateLimitFooter,
-} from "../../utils/rate-limiter.js";
-import {
-  validatePrompt,
-  sanitizeInput,
-  securityCheck,
-} from "../../utils/security.js";
+import { getRateLimiter, buildRateLimitFooter } from "../../utils/rate-limiter.js";
+import { validatePrompt, sanitizeInput, securityCheck } from "../../utils/security.js";
 import { createLogger } from "../../utils/logger.js";
 import config from "../../config.js";
 
@@ -102,11 +89,7 @@ export class AICommands {
     const userId = interaction.user.id;
 
     // Check rate limit with new system
-    const rateLimitResult = this.rateLimiter.checkRateLimit(
-      userId,
-      channelId,
-      isDM
-    );
+    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
     if (!rateLimitResult.allowed) {
       await interaction.reply({
         content: rateLimitResult.message ?? "Rate limited. Please wait.",
@@ -133,15 +116,11 @@ export class AICommands {
     // Record the request
     this.rateLimiter.recordRequest(userId, channelId, isDM);
 
-    const temperature =
-      mode === "creative" ? 0.9 : mode === "precise" ? 0.3 : 0.7;
+    const temperature = mode === "creative" ? 0.9 : mode === "precise" ? 0.3 : 0.7;
 
     try {
       // Get memory context for personalization
-      const memoryContext = await this.memoryManager.buildFullContext(
-        userId,
-        sanitized.text
-      );
+      const memoryContext = await this.memoryManager.buildFullContext(userId, sanitized.text);
 
       const systemPrompt = `You are a helpful Discord bot assistant. Be concise and friendly.
 
@@ -170,9 +149,7 @@ ${memoryContext}`;
       });
 
       // Store memory from conversation (async, don't wait)
-      this.memoryManager
-        .addMemory(userId, `User asked: ${sanitized.text}`)
-        .catch(() => {});
+      this.memoryManager.addMemory(userId, `User asked: ${sanitized.text}`).catch(() => {});
 
       // Build footer with rate limit info
       const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);
@@ -198,17 +175,14 @@ ${memoryContext}`;
       if (file && contextText) {
         embed.addFields({
           name: "📎 Attached Context",
-          value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(
-            1
-          )} KB)`,
+          value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)`,
           inline: true,
         });
       }
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply({
         content: `❌ Failed to get AI response: ${errorMessage}`,
       });
@@ -241,10 +215,7 @@ ${memoryContext}`;
     }
 
     try {
-      const success = await this.memoryManager.addMemory(
-        interaction.user.id,
-        security.safeText
-      );
+      const success = await this.memoryManager.addMemory(interaction.user.id, security.safeText);
 
       if (success) {
         const embed = new EmbedBuilder()
@@ -259,13 +230,11 @@ ${memoryContext}`;
         await interaction.editReply({ embeds: [embed] });
       } else {
         await interaction.editReply({
-          content:
-            "❌ Failed to save memory. The memory system may be unavailable.",
+          content: "❌ Failed to save memory. The memory system may be unavailable.",
         });
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply({
         content: `❌ Failed to save memory: ${errorMessage}`,
       });
@@ -280,9 +249,7 @@ ${memoryContext}`;
     await interaction.deferReply({ ephemeral: true });
 
     try {
-      const count = await this.memoryManager.deleteAllMemories(
-        interaction.user.id
-      );
+      const count = await this.memoryManager.deleteAllMemories(interaction.user.id);
 
       const embed = new EmbedBuilder()
         .setColor(config.colors.warning)
@@ -296,8 +263,7 @@ ${memoryContext}`;
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply({
         content: `❌ Failed to clear memories: ${errorMessage}`,
       });
@@ -318,9 +284,7 @@ ${memoryContext}`;
     if (!isSupported) {
       return {
         success: false,
-        error: `Unsupported file type. Supported: ${[
-          ...SUPPORTED_EXTENSIONS,
-        ].join(", ")}`,
+        error: `Unsupported file type. Supported: ${[...SUPPORTED_EXTENSIONS].join(", ")}`,
       };
     }
 
@@ -423,8 +387,7 @@ ${memoryContext}`;
         `Please summarize the following conversation concisely:\n\n${messageContent}`,
         {
           temperature: 0.5,
-          systemPrompt:
-            "You are a summarization assistant. Create clear, concise summaries.",
+          systemPrompt: "You are a summarization assistant. Create clear, concise summaries.",
         }
       );
 
@@ -437,8 +400,7 @@ ${memoryContext}`;
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply(`❌ Failed to summarize: ${errorMessage}`);
     }
   }
@@ -479,8 +441,7 @@ ${memoryContext}`;
         `Translate the following text to ${language}. Only respond with the translation, nothing else:\n\n${text}`,
         {
           temperature: 0.3,
-          systemPrompt:
-            "You are a translation assistant. Translate accurately.",
+          systemPrompt: "You are a translation assistant. Translate accurately.",
         }
       );
 
@@ -499,8 +460,7 @@ ${memoryContext}`;
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply(`❌ Failed to translate: ${errorMessage}`);
     }
   }
@@ -510,9 +470,7 @@ ${memoryContext}`;
     name: "Analyze Message",
     type: ApplicationCommandType.Message,
   })
-  async analyzeMessage(
-    interaction: MessageContextMenuCommandInteraction
-  ): Promise<void> {
+  async analyzeMessage(interaction: MessageContextMenuCommandInteraction): Promise<void> {
     await interaction.deferReply({ ephemeral: true });
 
     const message = interaction.targetMessage;
@@ -522,8 +480,7 @@ ${memoryContext}`;
         `Analyze this message and provide insights about its tone, intent, and key points:\n\n"${message.content}"`,
         {
           temperature: 0.5,
-          systemPrompt:
-            "You are a message analysis assistant. Be objective and insightful.",
+          systemPrompt: "You are a message analysis assistant. Be objective and insightful.",
         }
       );
 
@@ -536,8 +493,7 @@ ${memoryContext}`;
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
       await interaction.editReply(`❌ Failed to analyze: ${errorMessage}`);
     }
   }
@@ -547,9 +503,7 @@ ${memoryContext}`;
     name: "AI User Greeting",
     type: ApplicationCommandType.User,
   })
-  async userGreeting(
-    interaction: UserContextMenuCommandInteraction
-  ): Promise<void> {
+  async userGreeting(interaction: UserContextMenuCommandInteraction): Promise<void> {
     await interaction.deferReply();
 
     const targetUser = interaction.targetUser;
@@ -572,11 +526,8 @@ ${memoryContext}`;
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : "Unknown error";
-      await interaction.editReply(
-        `❌ Failed to generate greeting: ${errorMessage}`
-      );
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      await interaction.editReply(`❌ Failed to generate greeting: ${errorMessage}`);
     }
   }
 }

@@ -169,10 +169,7 @@ export class ConversationStore {
    * Save conversation to cache
    */
   private async save(conversation: Conversation): Promise<void> {
-    const key = getConversationKey(
-      conversation.metadata.userId,
-      conversation.metadata.channelId
-    );
+    const key = getConversationKey(conversation.metadata.userId, conversation.metadata.channelId);
     const cache = getCache();
     await cache.set(key, JSON.stringify(conversation), this.ttlMs);
   }
@@ -180,11 +177,7 @@ export class ConversationStore {
   /**
    * Mark conversation as summarized
    */
-  async markSummarized(
-    userId: string,
-    channelId: string,
-    summary: string
-  ): Promise<void> {
+  async markSummarized(userId: string, channelId: string, summary: string): Promise<void> {
     const key = getConversationKey(userId, channelId);
     const cache = getCache();
     const data = await cache.get(key);
@@ -245,9 +238,7 @@ export class ConversationStore {
     const key = getConversationKey(userId, channelId);
     const cache = getCache();
     await cache.del(key);
-    log.debug(
-      `Cleared conversation for user ${userId} in channel ${channelId}`
-    );
+    log.debug(`Cleared conversation for user ${userId} in channel ${channelId}`);
   }
 
   /**
@@ -270,10 +261,7 @@ export class ConversationStore {
   /**
    * Get conversation metadata without full messages
    */
-  async getMetadata(
-    userId: string,
-    channelId: string
-  ): Promise<ConversationMetadata | null> {
+  async getMetadata(userId: string, channelId: string): Promise<ConversationMetadata | null> {
     const key = getConversationKey(userId, channelId);
     const cache = getCache();
     const data = await cache.get(key);

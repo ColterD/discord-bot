@@ -9,9 +9,7 @@ const log = createLogger("Interaction");
 @Discord()
 export class InteractionEvent {
   @On({ event: Events.InteractionCreate })
-  async onInteraction([
-    interaction,
-  ]: ArgsOf<"interactionCreate">): Promise<void> {
+  async onInteraction([interaction]: ArgsOf<"interactionCreate">): Promise<void> {
     try {
       await client.executeInteraction(interaction);
     } catch (error) {

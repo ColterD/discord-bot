@@ -1,11 +1,7 @@
 import axios, { type AxiosInstance, type AxiosError } from "axios";
 import config from "../config.js";
 import { createLogger } from "../utils/logger.js";
-import {
-  wrapUserInput,
-  validateLLMOutput,
-  buildSecureSystemPrompt,
-} from "../utils/security.js";
+import { wrapUserInput, validateLLMOutput, buildSecureSystemPrompt } from "../utils/security.js";
 
 const log = createLogger("AI");
 
@@ -147,8 +143,7 @@ export class AIService {
     // Fixed delays in milliseconds - no external data influence
     const FIXED_DELAYS = [1000, 2000, 4000] as const;
     // Clamp index to valid range using only constants
-    const safeIndex =
-      retryIndex < 0 ? 0 : retryIndex > 2 ? 2 : Math.floor(retryIndex);
+    const safeIndex = retryIndex < 0 ? 0 : retryIndex > 2 ? 2 : Math.floor(retryIndex);
     // TypeScript needs explicit handling - we know the index is 0, 1, or 2
     return FIXED_DELAYS[safeIndex as 0 | 1 | 2];
   }
@@ -183,9 +178,7 @@ export class AIService {
     this.client.interceptors.response.use(
       (response) => {
         log.debug(
-          `${response.config.method?.toUpperCase()} ${response.config.url} - ${
-            response.status
-          }`
+          `${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status}`
         );
         return response;
       },
@@ -202,13 +195,11 @@ export class AIService {
           error.code === "ECONNABORTED";
 
         // Get or initialize retry count - stored on config for tracking across retries
-        const retryCount =
-          (requestConfig as { __retryCount?: number })?.__retryCount ?? 0;
+        const retryCount = (requestConfig as { __retryCount?: number })?.__retryCount ?? 0;
 
         if (isRetryable && requestConfig && retryCount < MAX_RETRIES) {
           // Update retry count on config
-          (requestConfig as { __retryCount?: number }).__retryCount =
-            retryCount + 1;
+          (requestConfig as { __retryCount?: number }).__retryCount = retryCount + 1;
 
           // Get the delay value for logging (safe, from fixed array)
           const delayMs = AIService.getSafeRetryDelay(retryCount);
@@ -324,9 +315,7 @@ export class AIService {
           if (status === 404 || status === 400) {
             this.isAsleep = true;
             this.isPreloaded = false;
-            log.warn(
-              `Model ${this.model} appears already unloaded; marking as asleep.`
-            );
+            log.warn(`Model ${this.model} appears already unloaded; marking as asleep.`);
             if (sleepStateCallback) {
               sleepStateCallback(true);
             }
@@ -469,13 +458,9 @@ export class AIService {
     const clampedTemperature = Math.min(Math.max(temperature, 0), 2);
 
     // Ensure maxTokens doesn't exceed configured maximum
-    const clampedMaxTokens = Math.min(
-      Math.max(1, Math.floor(maxTokens)),
-      config.llm.maxTokens
-    );
+    const clampedMaxTokens = Math.min(Math.max(1, Math.floor(maxTokens)), config.llm.maxTokens);
 
-    const effectiveTimeout =
-      typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : undefined;
+    const effectiveTimeout = typeof timeoutMs === "number" && timeoutMs > 0 ? timeoutMs : undefined;
 
     return {
       temperature: clampedTemperature,
@@ -544,9 +529,7 @@ export class AIService {
       const outputValidation = validateLLMOutput(response.data.message.content);
       if (!outputValidation.valid) {
         log.warn(
-          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(
-            ", "
-          )}`
+          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(", ")}`
         );
       }
 
@@ -563,9 +546,7 @@ export class AIService {
         }
 
         if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(
-            `LLM API error (chat): request timed out after ${elapsed}ms`
-          );
+          const err = new Error(`LLM API error (chat): request timed out after ${elapsed}ms`);
           (err as any).cause = error;
           throw err;
         }
@@ -575,9 +556,7 @@ export class AIService {
         throw err;
       }
 
-      const err = new Error(
-        `Unexpected error in LLM chat: ${formatUnknownError(error)}`
-      );
+      const err = new Error(`Unexpected error in LLM chat: ${formatUnknownError(error)}`);
       (err as any).cause = error;
       throw err;
     }
@@ -592,16 +571,13 @@ export class AIService {
     if (this.isAsleep) {
       const woke = await this.wake();
       if (!woke) {
-        const err = new Error(
-          "Failed to wake LLM model before generate request"
-        );
+        const err = new Error("Failed to wake LLM model before generate request");
         throw err;
       }
     }
     this.updateActivity();
 
-    const { temperature, maxTokens, keepAlive, timeoutMs } =
-      this.normalizeOptions(options);
+    const { temperature, maxTokens, keepAlive, timeoutMs } = this.normalizeOptions(options);
 
     // Wrap user input for safety
     const wrappedPrompt = wrapUserInput(prompt);
@@ -634,9 +610,7 @@ export class AIService {
       const outputValidation = validateLLMOutput(response.data.response);
       if (!outputValidation.valid) {
         log.warn(
-          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(
-            ", "
-          )}`
+          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(", ")}`
         );
       }
 
@@ -653,9 +627,7 @@ export class AIService {
         }
 
         if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(
-            `LLM API error (generate): request timed out after ${elapsed}ms`
-          );
+          const err = new Error(`LLM API error (generate): request timed out after ${elapsed}ms`);
           (err as any).cause = error;
           throw err;
         }
@@ -665,9 +637,7 @@ export class AIService {
         throw err;
       }
 
-      const err = new Error(
-        `Unexpected error in LLM generate: ${formatUnknownError(error)}`
-      );
+      const err = new Error(`Unexpected error in LLM generate: ${formatUnknownError(error)}`);
       (err as any).cause = error;
       throw err;
     }
@@ -694,8 +664,7 @@ export class AIService {
     }
     this.updateActivity();
 
-    const { temperature, maxTokens, keepAlive, timeoutMs } =
-      this.normalizeOptions(options);
+    const { temperature, maxTokens, keepAlive, timeoutMs } = this.normalizeOptions(options);
 
     const startTime = Date.now();
 
@@ -716,9 +685,7 @@ export class AIService {
       );
 
       const elapsed = Date.now() - startTime;
-      log.debug(
-        `LLM chatWithMessages completed in ${elapsed}ms using model ${this.model}`
-      );
+      log.debug(`LLM chatWithMessages completed in ${elapsed}ms using model ${this.model}`);
 
       this.updateActivity();
 
@@ -726,9 +693,7 @@ export class AIService {
       const outputValidation = validateLLMOutput(response.data.message.content);
       if (!outputValidation.valid) {
         log.warn(
-          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(
-            ", "
-          )}`
+          `LLM output contained suspicious content: ${outputValidation.issuesFound.join(", ")}`
         );
       }
 
@@ -752,9 +717,7 @@ export class AIService {
           throw err;
         }
 
-        const err = new Error(
-          `LLM API error (chatWithMessages): ${error.message}`
-        );
+        const err = new Error(`LLM API error (chatWithMessages): ${error.message}`);
         (err as any).cause = error;
         throw err;
       }
@@ -787,9 +750,7 @@ export class AIService {
    */
   async listModels(): Promise<string[]> {
     try {
-      const response = await this.client.get<{ models: { name: string }[] }>(
-        "/api/tags"
-      );
+      const response = await this.client.get<{ models: { name: string }[] }>("/api/tags");
       return response.data.models.map((m) => m.name);
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -797,9 +758,7 @@ export class AIService {
         (err as any).cause = error;
         throw err;
       }
-      const err = new Error(
-        `Unexpected error listing models: ${formatUnknownError(error)}`
-      );
+      const err = new Error(`Unexpected error listing models: ${formatUnknownError(error)}`);
       (err as any).cause = error;
       throw err;
     }

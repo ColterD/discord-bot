@@ -24,9 +24,7 @@ export function PermissionGuard(
 
     // Get member permissions
     const memberPermissions =
-      typeof interaction.member.permissions === "string"
-        ? null
-        : interaction.member.permissions;
+      typeof interaction.member.permissions === "string" ? null : interaction.member.permissions;
 
     if (!memberPermissions) {
       await interaction.reply({
@@ -37,15 +35,11 @@ export function PermissionGuard(
     }
 
     // Check each required permission
-    const missingPermissions = permissions.filter(
-      (perm) => !memberPermissions.has(perm)
-    );
+    const missingPermissions = permissions.filter((perm) => !memberPermissions.has(perm));
 
     if (missingPermissions.length > 0) {
       await interaction.reply({
-        content: `❌ You are missing the following permissions: ${missingPermissions.join(
-          ", "
-        )}`,
+        content: `❌ You are missing the following permissions: ${missingPermissions.join(", ")}`,
         ephemeral: true,
       });
       return;

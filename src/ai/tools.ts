@@ -85,14 +85,12 @@ export const AGENT_TOOLS: Tool[] = [
   },
   {
     name: "get_time",
-    description:
-      "Get current time in a specific timezone or convert between timezones.",
+    description: "Get current time in a specific timezone or convert between timezones.",
     parameters: [
       {
         name: "timezone",
         type: "string",
-        description:
-          "IANA timezone name (e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')",
+        description: "IANA timezone name (e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')",
         required: false,
       },
     ],
@@ -151,8 +149,7 @@ export const AGENT_TOOLS: Tool[] = [
       {
         name: "negative_prompt",
         type: "string",
-        description:
-          "Things to avoid in the image (e.g., 'blurry, low quality, distorted')",
+        description: "Things to avoid in the image (e.g., 'blurry, low quality, distorted')",
         required: false,
       },
       {
@@ -212,8 +209,7 @@ export const AGENT_TOOLS: Tool[] = [
  */
 export function formatToolsForPrompt(): string {
   let output = "# Available Tools\n\n";
-  output +=
-    "You can call tools by responding with a JSON block in this format:\n";
+  output += "You can call tools by responding with a JSON block in this format:\n";
   output += "```json\n";
   output += '{"tool": "tool_name", "arguments": {"param1": "value1"}}\n';
   output += "```\n\n";
@@ -231,14 +227,10 @@ export function formatToolsForPrompt(): string {
   }
 
   output += "## Guidelines:\n";
-  output +=
-    "- Use tools when you need current information or to perform actions\n";
-  output +=
-    "- You can call multiple tools in sequence by waiting for each result\n";
-  output +=
-    "- After getting tool results, synthesize them into a helpful response\n";
-  output +=
-    "- If a tool fails, try an alternative approach or inform the user\n";
+  output += "- Use tools when you need current information or to perform actions\n";
+  output += "- You can call multiple tools in sequence by waiting for each result\n";
+  output += "- After getting tool results, synthesize them into a helpful response\n";
+  output += "- If a tool fails, try an alternative approach or inform the user\n";
   output += "- Always provide a final answer to the user after using tools\n";
 
   return output;

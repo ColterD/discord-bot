@@ -41,11 +41,7 @@ export {
   type HealthCheckResult,
 } from "./health.js";
 
-export {
-  fetchWithTimeout,
-  abortAllPendingRequests,
-  getActiveRequestCount,
-} from "./fetch.js";
+export { fetchWithTimeout, abortAllPendingRequests, getActiveRequestCount } from "./fetch.js";
 
 export {
   getMemoryStats,
@@ -57,9 +53,4 @@ export {
   logMemoryStats,
 } from "./memory.js";
 
-export {
-  getCache,
-  ValkeyCache,
-  InMemoryCache,
-  type CacheClient,
-} from "./cache.js";
+export { getCache, ValkeyCache, InMemoryCache, type CacheClient } from "./cache.js";

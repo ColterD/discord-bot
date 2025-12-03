@@ -151,10 +151,7 @@ function getSeverityFromPattern(pattern: RegExp): ThreatDetail["severity"] {
 /**
  * Layer 2: Name similarity detection
  */
-function detectNameSimilarity(
-  displayName: string,
-  username: string
-): ThreatDetail[] {
+function detectNameSimilarity(displayName: string, username: string): ThreatDetail[] {
   const threats: ThreatDetail[] = [];
   const threshold = config.security.impersonation.similarityThreshold;
 
@@ -288,12 +285,9 @@ export function detectImpersonation(
       critical: 1.0,
     };
 
-    const maxWeight = Math.max(
-      ...threats.map((t) => severityWeights[t.severity])
-    );
+    const maxWeight = Math.max(...threats.map((t) => severityWeights[t.severity]));
     const avgWeight =
-      threats.reduce((sum, t) => sum + severityWeights[t.severity], 0) /
-      threats.length;
+      threats.reduce((sum, t) => sum + severityWeights[t.severity], 0) / threats.length;
 
     // Confidence increases with more threats and higher severity
     confidence = Math.min(0.5 * maxWeight + 0.5 * avgWeight, 1.0);
@@ -335,10 +329,7 @@ export function quickInjectionCheck(content: string): boolean {
 /**
  * Check if a user appears to be impersonating a protected role
  */
-export function isImpersonatingRole(
-  displayName: string,
-  username: string
-): boolean {
+export function isImpersonatingRole(displayName: string, username: string): boolean {
   const threshold = config.security.impersonation.similarityThreshold;
 
   for (const protectedName of PROTECTED_NAMES) {

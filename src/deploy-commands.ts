@@ -36,7 +36,7 @@ async function deployCommands(): Promise<void> {
   // Dynamic import to get command metadata
   await importx(`${dirname(import.meta.url)}/commands/**/*.{ts,js}`);
 
-  const rest = new REST().setToken(token as string);
+  const rest = new REST().setToken(token!);
 
   try {
     if (isProduction) {
@@ -44,7 +44,7 @@ async function deployCommands(): Promise<void> {
       console.log("🌍 Deploying commands globally (production mode)...");
       console.log("⚠️  Note: Global commands take up to 1 hour to propagate.");
 
-      await rest.put(Routes.applicationCommands(clientId as string), {
+      await rest.put(Routes.applicationCommands(clientId!), {
         body: [], // Commands will be registered via client.initApplicationCommands()
       });
 
@@ -59,18 +59,13 @@ async function deployCommands(): Promise<void> {
       console.log(`🏠 Deploying commands to dev guild: ${devGuildId}`);
       console.log("⚡ Guild commands update instantly.");
 
-      await rest.put(
-        Routes.applicationGuildCommands(clientId as string, devGuildId),
-        { body: [] }
-      );
+      await rest.put(Routes.applicationGuildCommands(clientId!, devGuildId), { body: [] });
 
       console.log("✅ Guild commands deployment initiated.");
     }
 
     console.log("\n📋 Deployment Strategy Summary:");
-    console.log(
-      `   Mode: ${isProduction ? "PRODUCTION (Global)" : "DEVELOPMENT (Guild)"}`
-    );
+    console.log(`   Mode: ${isProduction ? "PRODUCTION (Global)" : "DEVELOPMENT (Guild)"}`);
     console.log(`   Propagation: ${isProduction ? "Up to 1 hour" : "Instant"}`);
   } catch (error) {
     console.error("Failed to deploy commands:", error);

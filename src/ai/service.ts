@@ -544,27 +544,24 @@ export class AIService {
       const elapsed = Date.now() - startTime;
       if (axios.isAxiosError(error)) {
         if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
+          throw new Error(
+            "Cannot connect to LLM server. Make sure Ollama is running on your host machine.",
+            { cause: error }
           );
-          (err as any).cause = error;
-          throw err;
         }
 
         if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(`LLM API error (chat): request timed out after ${elapsed}ms`);
-          (err as any).cause = error;
-          throw err;
+          throw new Error(`LLM API error (chat): request timed out after ${elapsed}ms`, {
+            cause: error,
+          });
         }
 
-        const err = new Error(`LLM API error (chat): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
+        throw new Error(`LLM API error (chat): ${error.message}`, { cause: error });
       }
 
-      const err = new Error(`Unexpected error in LLM chat: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      throw new Error(`Unexpected error in LLM chat: ${formatUnknownError(error)}`, {
+        cause: error,
+      });
     }
   }
 
@@ -625,27 +622,24 @@ export class AIService {
       const elapsed = Date.now() - startTime;
       if (axios.isAxiosError(error)) {
         if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
+          throw new Error(
+            "Cannot connect to LLM server. Make sure Ollama is running on your host machine.",
+            { cause: error }
           );
-          (err as any).cause = error;
-          throw err;
         }
 
         if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(`LLM API error (generate): request timed out after ${elapsed}ms`);
-          (err as any).cause = error;
-          throw err;
+          throw new Error(`LLM API error (generate): request timed out after ${elapsed}ms`, {
+            cause: error,
+          });
         }
 
-        const err = new Error(`LLM API error (generate): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
+        throw new Error(`LLM API error (generate): ${error.message}`, { cause: error });
       }
 
-      const err = new Error(`Unexpected error in LLM generate: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      throw new Error(`Unexpected error in LLM generate: ${formatUnknownError(error)}`, {
+        cause: error,
+      });
     }
   }
 
@@ -708,31 +702,25 @@ export class AIService {
       const elapsed = Date.now() - startTime;
       if (axios.isAxiosError(error)) {
         if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
+          throw new Error(
+            "Cannot connect to LLM server. Make sure Ollama is running on your host machine.",
+            { cause: error }
           );
-          (err as any).cause = error;
-          throw err;
         }
 
         if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(
-            `LLM API error (chatWithMessages): request timed out after ${elapsed}ms`
+          throw new Error(
+            `LLM API error (chatWithMessages): request timed out after ${elapsed}ms`,
+            { cause: error }
           );
-          (err as any).cause = error;
-          throw err;
         }
 
-        const err = new Error(`LLM API error (chatWithMessages): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
+        throw new Error(`LLM API error (chatWithMessages): ${error.message}`, { cause: error });
       }
 
-      const err = new Error(
-        `Unexpected error in LLM chatWithMessages: ${formatUnknownError(error)}`
-      );
-      (err as any).cause = error;
-      throw err;
+      throw new Error(`Unexpected error in LLM chatWithMessages: ${formatUnknownError(error)}`, {
+        cause: error,
+      });
     }
   }
 
@@ -760,13 +748,11 @@ export class AIService {
       return response.data.models.map((m) => m.name);
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        const err = new Error(`Failed to list models: ${error.message}`);
-        (err as any).cause = error;
-        throw err;
+        throw new Error(`Failed to list models: ${error.message}`, { cause: error });
       }
-      const err = new Error(`Unexpected error listing models: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      throw new Error(`Unexpected error listing models: ${formatUnknownError(error)}`, {
+        cause: error,
+      });
     }
   }
 

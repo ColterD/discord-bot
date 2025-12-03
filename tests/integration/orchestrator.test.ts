@@ -5,7 +5,7 @@
  * Run with: npx tsx tests/integration/orchestrator.test.ts
  */
 
-import { strict as assert } from "assert";
+import { strict as assert } from "node:assert";
 
 // Mock Discord.js User and GuildMember
 interface MockUser {
@@ -316,4 +316,4 @@ test("Cache: In-memory fallback works", async () => {
 
 // ============ Run all tests ============
 
-runTests().catch(console.error);
+await runTests();

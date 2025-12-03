@@ -1,0 +1,328 @@
+# Discord Bot
+
+A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring local LLM integration via Ollama, ChatGPT-style memory, tool calling, MCP integration, and Docker containerization.
+
+## Features
+
+- 🎯 **Slash Commands** - Modern Discord slash commands with decorators
+- 🤖 **AI Integration** - Local LLM support via Ollama (optimized for RTX 4090)
+- 🧠 **ChatGPT-Style Memory** - Three-tier memory system with Valkey persistence
+- 🔧 **Tool Calling** - AI agent with tool execution loop (web search, calculations, image generation)
+- 🔌 **MCP Integration** - Model Context Protocol support for external tools
+- 🛡️ **Security** - Impersonation detection, prompt injection protection, 4-tier tool permissions
+- 🖼️ **Image Generation** - ComfyUI integration for AI image generation
+- 🔒 **Moderation Tools** - Kick, ban, and message management
+- 🧩 **Interactive UI** - Buttons, select menus, and modals
+- 🔒 **Guards & Middleware** - Permission checks, rate limiting, bot filtering
+- 🐳 **Docker Support** - Containerized deployment with security hardening
+
+## Architecture
+
+### Memory System (Three-Tier)
+
+1. **Active Context** - Current conversation in Valkey with auto-summarization
+2. **User Profile** - Long-term facts via Mem0 semantic memory
+3. **Episodic Memory** - SurrealDB for detailed interaction history
+
+### Tool Permissions (Four-Tier)
+
+| Tier       | Access                    | Examples                            |
+| ---------- | ------------------------- | ----------------------------------- |
+| Owner-only | Bot owner exclusively     | filesystem_\*, execute, shell, eval |
+| Restricted | Hidden from non-owners    | code_interpreter, admin\_\*         |
+| Elevated   | Visible but may be denied | database\_\*, memory_edit           |
+| Public     | Available to all          | web_search, calculate, get_time     |
+
+### Security Features
+
+- **Impersonation Detection** - Pattern matching + name similarity + semantic analysis
+- **Prompt Injection Protection** - Multi-layer detection for jailbreak attempts
+- **Tool Abuse Prevention** - Validates tool requests for malicious patterns
+- **LLM Output Validation** - Filters responses for security leaks
+
+## Project Structure
+
+```
+src/
+├── index.ts              # Main entry point
+├── config.ts             # Configuration management
+├── deploy-commands.ts    # Command deployment script
+├── healthcheck.ts        # Docker health check
+├── ai/
+│   ├── service.ts        # Ollama LLM integration
+│   ├── orchestrator.ts   # Main AI orchestration with tool loop
+│   ├── conversation.ts   # Conversation management
+│   ├── tools.ts          # Tool definitions
+│   ├── image-service.ts  # ComfyUI image generation
+│   └── memory/
+│       ├── memory-manager.ts    # Three-tier memory coordinator
+│       ├── conversation-store.ts # Valkey-backed conversations
+│       └── session-summarizer.ts # Background summarization
+├── mcp/
+│   ├── client.ts         # MCP client wrapper
+│   └── index.ts          # MCP exports
+├── security/
+│   ├── impersonation-detector.ts # Multi-layer threat detection
+│   ├── tool-permissions.ts       # 4-tier permission system
+│   └── index.ts                  # Security exports
+├── commands/
+│   ├── utility/          # General commands
+│   ├── moderation/       # Mod commands
+│   ├── ai/               # AI commands
+│   └── admin/            # Admin commands
+├── components/           # Discord UI components
+├── events/               # Discord event handlers
+├── guards/               # Permission guards
+└── utils/
+    ├── cache.ts          # Valkey client with fallback
+    ├── security.ts       # Security utilities
+    └── ...
+```
+
+## Prerequisites
+
+- Node.js 20+
+- npm or pnpm
+- Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications))
+- Ollama (for AI features) - [ollama.ai](https://ollama.ai)
+- Docker & Docker Compose (for containerized deployment)
+- Valkey (Redis-compatible cache, included in Docker Compose)
+
+## Setup
+
+### 1. Clone and Install
+
+```bash
+git clone <your-repo>
+cd discord-bot
+npm install
+```
+
+### 2. Configure Environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your credentials:
+
+```env
+# Discord
+DISCORD_TOKEN=your_bot_token_here
+CLIENT_ID=your_application_client_id
+GUILD_ID=your_development_guild_id
+OWNER_ID=your_discord_user_id
+
+# Environment
+NODE_ENV=development
+
+# Ollama/LLM
+OLLAMA_HOST=http://ollama:11434
+LLM_MODEL=hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1
+
+# Valkey (Redis-compatible)
+VALKEY_URL=valkey://valkey:6379
+
+# Orchestrator
+LLM_USE_ORCHESTRATOR=true
+
+# ComfyUI (optional, for image generation)
+COMFYUI_URL=http://comfyui:8188
+```
+
+### 3. Setup Ollama (for AI features)
+
+```bash
+# Install Ollama from https://ollama.ai
+# Pull the recommended model
+ollama pull hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1
+
+# Or use a smaller model
+ollama pull llama3.2
+```
+
+### 4. Deploy Commands
+
+```bash
+# Development (instant, guild-only)
+npm run deploy
+
+# Production (global, ~1hr propagation)
+NODE_ENV=production npm run deploy
+```
+
+### 5. Run the Bot
+
+```bash
+# Development with hot reload
+npm run dev
+
+# Production
+npm run build
+npm start
+```
+
+## Docker Deployment
+
+### Build and Run
+
+```bash
+# Build the image
+docker-compose build
+
+# Run the container
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+```
+
+### Docker Security Features
+
+- Read-only root filesystem
+- Non-root user execution
+- Dropped Linux capabilities
+- Resource limits (1 CPU, 512MB RAM)
+- No new privileges flag
+
+### Accessing Local Ollama from Docker
+
+The container uses `host.docker.internal:11434` to reach Ollama running on your host machine. Ensure Ollama is running before starting the container.
+
+## Commands
+
+### Utility
+
+| Command          | Description             |
+| ---------------- | ----------------------- |
+| `/ping`          | Check bot latency       |
+| `/info`          | Display bot information |
+| `/avatar [user]` | Get user's avatar       |
+| `/server`        | Show server information |
+
+### Moderation
+
+| Command                         | Description     | Permission      |
+| ------------------------------- | --------------- | --------------- |
+| `/kick <member> [reason]`       | Kick a member   | Kick Members    |
+| `/ban <member> [reason] [days]` | Ban a member    | Ban Members     |
+| `/clear <amount>`               | Delete messages | Manage Messages |
+
+### AI
+
+| Command                        | Description                            |
+| ------------------------------ | -------------------------------------- |
+| `/ask <question> [mode]`       | Ask the AI (creative/balanced/precise) |
+| `/summarize [count]`           | Summarize recent messages              |
+| `/translate <text> <language>` | Translate text                         |
+| `/imagine <prompt> [style]`    | Generate an image with AI              |
+
+### Admin (Owner-only)
+
+| Command               | Description              |
+| --------------------- | ------------------------ |
+| `/ai-control status`  | View AI system status    |
+| `/ai-control enable`  | Enable AI features       |
+| `/ai-control disable` | Disable AI features      |
+| `/persona set`        | Set bot personality      |
+
+### Context Menus
+
+- **Analyze Message** - Right-click message → Apps → Analyze Message
+- **AI User Greeting** - Right-click user → Apps → AI User Greeting
+
+## Configuration
+
+The bot uses environment variables and `src/config.ts` for configuration.
+
+### Key Configuration Options
+
+```typescript
+export const config = {
+  llm: {
+    apiUrl: process.env.OLLAMA_HOST ?? "http://ollama:11434",
+    model: process.env.LLM_MODEL ?? "llama3.2",
+    useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
+    maxTokens: 4096,
+    temperature: 0.7,
+    repeatPenalty: 1.1,
+  },
+  memory: {
+    conversationTTL: 30 * 60 * 1000, // 30 minutes
+    maxMessagesPerConversation: 50,
+    summarizeAfterMessages: 20,
+    summarizeAfterIdleMs: 10 * 60 * 1000, // 10 minutes
+  },
+  valkey: {
+    url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
+    prefix: "discord-bot:",
+  },
+  security: {
+    ownerId: process.env.OWNER_ID,
+  },
+};
+```
+
+### MCP Server Configuration
+
+Configure MCP servers in `mcp-servers.json`:
+
+```json
+{
+  "servers": [
+    {
+      "name": "context7",
+      "command": "npx",
+      "args": ["-y", "@context7/mcp-server"],
+      "enabled": true
+    }
+  ]
+}
+```
+
+## Development
+
+```bash
+# Type check
+npm run typecheck
+
+# Build
+npm run build
+
+# Dev with hot reload
+npm run dev
+
+# Run tests
+npm test
+```
+
+## Testing
+
+```bash
+# Run integration tests
+npm run test:integration
+
+# Tests cover:
+# - Tool permissions (4-tier system)
+# - Impersonation detection
+# - Security utilities
+# - Tool definitions
+# - Cache operations
+```
+
+## Scripts
+
+| Script                   | Description                       |
+| ------------------------ | --------------------------------- |
+| `npm run dev`            | Start with hot reload (tsx watch) |
+| `npm run build`          | Compile TypeScript                |
+| `npm start`              | Run compiled JS                   |
+| `npm run deploy`         | Deploy slash commands             |
+| `npm run typecheck`      | Type check without emit           |
+| `npm test`               | Run integration tests             |
+| `npm run test:integration` | Run integration tests           |
+| `npm run clean`          | Delete dist folder                |
+
+## License
+
+MIT

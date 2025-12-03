@@ -1,0 +1,282 @@
+/**
+ * Cache Utility
+ * Valkey client with graceful fallback to in-memory Map
+ */
+
+import Valkey from "iovalkey";
+import { config } from "../config.js";
+import { createLogger } from "./logger.js";
+
+const log = createLogger("Cache");
+
+/**
+ * Cache interface for abstraction
+ */
+export interface CacheClient {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, ttlMs?: number): Promise<void>;
+  del(key: string): Promise<void>;
+  exists(key: string): Promise<boolean>;
+  keys(pattern: string): Promise<string[]>;
+  ttl(key: string): Promise<number>;
+  expire(key: string, ttlMs: number): Promise<void>;
+  isConnected(): boolean;
+  disconnect(): Promise<void>;
+}
+
+/**
+ * In-memory fallback cache for when Valkey is unavailable
+ */
+export class InMemoryCache implements CacheClient {
+  private store = new Map<
+    string,
+    { value: string; expiresAt: number | null }
+  >();
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+  constructor() {
+    // Cleanup expired keys every 60 seconds
+    this.cleanupInterval = setInterval(() => this.cleanup(), 60000);
+  }
+
+  private cleanup(): void {
+    const now = Date.now();
+    for (const [key, entry] of this.store) {
+      if (entry.expiresAt !== null && entry.expiresAt < now) {
+        this.store.delete(key);
+      }
+    }
+  }
+
+  async get(key: string): Promise<string | null> {
+    const entry = this.store.get(key);
+    if (!entry) return null;
+    if (entry.expiresAt !== null && entry.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return null;
+    }
+    return entry.value;
+  }
+
+  async set(key: string, value: string, ttlMs?: number): Promise<void> {
+    this.store.set(key, {
+      value,
+      expiresAt: ttlMs !== undefined ? Date.now() + ttlMs : null,
+    });
+  }
+
+  async del(key: string): Promise<void> {
+    this.store.delete(key);
+  }
+
+  async exists(key: string): Promise<boolean> {
+    const value = await this.get(key);
+    return value !== null;
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    // Simple pattern matching (supports * wildcard)
+    const regex = new RegExp(
+      "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
+    );
+    const matches: string[] = [];
+    const now = Date.now();
+
+    for (const [key, entry] of this.store) {
+      if (entry.expiresAt !== null && entry.expiresAt < now) {
+        this.store.delete(key);
+        continue;
+      }
+      if (regex.test(key)) {
+        matches.push(key);
+      }
+    }
+    return matches;
+  }
+
+  async ttl(key: string): Promise<number> {
+    const entry = this.store.get(key);
+    if (!entry) return -2; // Key doesn't exist
+    if (entry.expiresAt === null) return -1; // No expiry
+    const remaining = entry.expiresAt - Date.now();
+    return remaining > 0 ? Math.ceil(remaining / 1000) : -2;
+  }
+
+  async expire(key: string, ttlMs: number): Promise<void> {
+    const entry = this.store.get(key);
+    if (entry) {
+      entry.expiresAt = Date.now() + ttlMs;
+    }
+  }
+
+  isConnected(): boolean {
+    return true; // In-memory is always "connected"
+  }
+
+  async disconnect(): Promise<void> {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+      this.cleanupInterval = null;
+    }
+    this.store.clear();
+  }
+}
+
+/**
+ * Valkey cache client wrapper
+ */
+export class ValkeyCache implements CacheClient {
+  private client: Valkey;
+  private connected = false;
+  private readonly keyPrefix: string;
+
+  constructor(url: string, keyPrefix: string) {
+    this.keyPrefix = keyPrefix;
+    this.client = new Valkey(url, {
+      retryStrategy: (times: number) => {
+        if (times > 3) {
+          log.warn("Max retries reached, giving up");
+          return null; // Stop retrying
+        }
+        return Math.min(times * 200, 2000);
+      },
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: true,
+    });
+
+    this.client.on("connect", () => {
+      this.connected = true;
+      log.info("Connected to Valkey");
+    });
+
+    this.client.on("error", (err: Error) => {
+      this.connected = false;
+      log.error("Connection error: " + err.message, err);
+    });
+
+    this.client.on("close", () => {
+      this.connected = false;
+      log.debug("Connection closed");
+    });
+  }
+
+  async connect(): Promise<void> {
+    try {
+      await this.client.connect();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.error("Failed to connect: " + message, error);
+      throw error;
+    }
+  }
+
+  private prefixKey(key: string): string {
+    return `${this.keyPrefix}${key}`;
+  }
+
+  async get(key: string): Promise<string | null> {
+    return this.client.get(this.prefixKey(key));
+  }
+
+  async set(key: string, value: string, ttlMs?: number): Promise<void> {
+    const prefixedKey = this.prefixKey(key);
+    if (ttlMs !== undefined) {
+      await this.client.set(prefixedKey, value, "PX", ttlMs);
+    } else {
+      await this.client.set(prefixedKey, value);
+    }
+  }
+
+  async del(key: string): Promise<void> {
+    await this.client.del(this.prefixKey(key));
+  }
+
+  async exists(key: string): Promise<boolean> {
+    const result = await this.client.exists(this.prefixKey(key));
+    return result === 1;
+  }
+
+  async keys(pattern: string): Promise<string[]> {
+    const prefixedPattern = this.prefixKey(pattern);
+    const keys = await this.client.keys(prefixedPattern);
+    // Remove prefix from returned keys
+    return keys.map((k: string) => k.slice(this.keyPrefix.length));
+  }
+
+  async ttl(key: string): Promise<number> {
+    return this.client.ttl(this.prefixKey(key));
+  }
+
+  async expire(key: string, ttlMs: number): Promise<void> {
+    await this.client.pexpire(this.prefixKey(key), ttlMs);
+  }
+
+  isConnected(): boolean {
+    return this.connected;
+  }
+
+  async disconnect(): Promise<void> {
+    await this.client.quit();
+    this.connected = false;
+  }
+}
+
+/**
+ * Cache singleton with automatic fallback
+ */
+class CacheManager {
+  private static instance: CacheManager | null = null;
+  private cache: CacheClient;
+  private fallbackCache: InMemoryCache;
+  private usingFallback = false;
+
+  private constructor() {
+    this.fallbackCache = new InMemoryCache();
+    this.cache = this.fallbackCache;
+  }
+
+  static getInstance(): CacheManager {
+    if (!CacheManager.instance) {
+      CacheManager.instance = new CacheManager();
+    }
+    return CacheManager.instance;
+  }
+
+  async initialize(): Promise<void> {
+    try {
+      const valkeyCache = new ValkeyCache(
+        config.valkey.url,
+        config.valkey.keyPrefix
+      );
+      await valkeyCache.connect();
+      this.cache = valkeyCache;
+      this.usingFallback = false;
+      log.info("Using Valkey for caching");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      log.warn("Valkey unavailable, using in-memory fallback: " + message);
+      this.cache = this.fallbackCache;
+      this.usingFallback = true;
+    }
+  }
+
+  getClient(): CacheClient {
+    return this.cache;
+  }
+
+  isUsingFallback(): boolean {
+    return this.usingFallback;
+  }
+
+  async shutdown(): Promise<void> {
+    await this.cache.disconnect();
+    if (!this.usingFallback) {
+      await this.fallbackCache.disconnect();
+    }
+  }
+}
+
+// Export singleton
+export const cacheManager = CacheManager.getInstance();
+export const getCache = (): CacheClient => cacheManager.getClient();

@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp@latest"],
+      "env": {
+        "CONTEXT7_API_KEY": "${CONTEXT7_API_KEY}"
+      },
+      "description": "Context7 MCP server for up-to-date library documentation",
+      "metadata": {
+        "permissions": "public",
+        "tools": ["resolve-library-id", "get-library-docs"]
+      }
+    },
+    "time": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-time"],
+      "description": "Time server for current date/time awareness",
+      "metadata": {
+        "permissions": "public",
+        "tools": ["get_current_time", "convert_time"]
+      }
+    }
+  }
+}

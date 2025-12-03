@@ -61,7 +61,10 @@ export class AICommands {
     userId: string,
     channelId: string,
     isDM: boolean
-  ): Promise<{ allowed: false } | { allowed: true; result: { allowed: true; isWarning?: boolean; message?: string | null } }> {
+  ): Promise<
+    | { allowed: false }
+    | { allowed: true; result: { allowed: true; isWarning?: boolean; message?: string | null } }
+  > {
     const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
     if (!rateLimitResult.allowed) {
       await interaction.reply({
@@ -70,7 +73,14 @@ export class AICommands {
       });
       return { allowed: false };
     }
-    return { allowed: true, result: { allowed: true, isWarning: rateLimitResult.isWarning, message: rateLimitResult.message } };
+    return {
+      allowed: true,
+      result: {
+        allowed: true,
+        isWarning: rateLimitResult.isWarning,
+        message: rateLimitResult.message,
+      },
+    };
   }
 
   /**
@@ -137,7 +147,12 @@ export class AICommands {
     const userId = interaction.user.id;
 
     // Check rate limit
-    const rateLimitCheck = await this.checkRateLimitAndRespond(interaction, userId, channelId, isDM);
+    const rateLimitCheck = await this.checkRateLimitAndRespond(
+      interaction,
+      userId,
+      channelId,
+      isDM
+    );
     if (!rateLimitCheck.allowed) return;
     const rateLimitResult = rateLimitCheck.result;
 

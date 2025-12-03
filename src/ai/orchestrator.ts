@@ -18,8 +18,7 @@ import { mcpManager, type McpTool } from "../mcp/index.js";
 import { detectImpersonation, type ThreatDetail } from "../security/index.js";
 import { checkToolAccess, filterToolsForUser } from "../security/tool-permissions.js";
 import { createLogger } from "../utils/logger.js";
-import { stripHtmlTags } from "../utils/security.js";
-import { buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
+import { stripHtmlTags, buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
 import { executeImageGenerationTool } from "./image-service.js";
 import { config } from "../config.js";
 
@@ -105,8 +104,8 @@ const TOOL_TIMEOUT_MS = 30000;
  * Main AI Orchestrator class
  */
 export class Orchestrator {
-  private aiService: AIService;
-  private summarizer: SessionSummarizer;
+  private readonly aiService: AIService;
+  private readonly summarizer: SessionSummarizer;
 
   constructor() {
     this.aiService = getAIService();
@@ -116,6 +115,143 @@ export class Orchestrator {
   /**
    * Run the orchestrator with a user message
    */
+  /**
+   * Perform security check on incoming message
+   */
+  private performSecurityCheck(
+    message: string,
+    displayName: string,
+    username: string,
+    userTag: string
+  ): OrchestratorResponse | null {
+    const securityCheck = detectImpersonation(message, displayName, username);
+    if (securityCheck.detected && securityCheck.confidence > 0.8) {
+      const threatTypes = securityCheck.threats.map((t: ThreatDetail) => t.type).join(", ");
+      log.warn(`Blocked message from ${userTag}: ${threatTypes}`);
+      return {
+        content: "I noticed something unusual in your message. Could you rephrase that?",
+        toolsUsed: [],
+        iterations: 0,
+        blocked: true,
+        blockReason: securityCheck.threats[0]?.description ?? "Security check failed",
+      };
+    }
+    return null;
+  }
+
+  /**
+   * Initialize agent context for the run loop
+   */
+  private initializeAgentContext(
+    conversationContext: string | null,
+    message: string
+  ): OrchestratorMessage[] {
+    const context: OrchestratorMessage[] = [];
+    if (conversationContext) {
+      context.push({ role: "system", content: `Recent conversation:\n${conversationContext}` });
+    }
+    context.push({ role: "user", content: message });
+    return context;
+  }
+
+  /**
+   * Handle LLM response error
+   */
+  private handleLLMError(
+    error: unknown,
+    toolsUsed: string[],
+    iterations: number
+  ): OrchestratorResponse {
+    log.error(`LLM request failed: ${error instanceof Error ? error.message : "Unknown"}`);
+    return {
+      content: "I'm having trouble thinking right now. Please try again in a moment.",
+      toolsUsed,
+      iterations,
+    };
+  }
+
+  /**
+   * Execute tool and add result to context
+   */
+  private async executeToolAndUpdateContext(
+    toolCall: ToolCall,
+    userId: string,
+    context: OrchestratorMessage[],
+    toolsUsed: string[],
+    response: string
+  ): Promise<{ buffer: Buffer; filename: string } | undefined> {
+    context.push({ role: "assistant", content: response });
+    let generatedImage: { buffer: Buffer; filename: string } | undefined;
+
+    try {
+      const result = await this.executeTool(toolCall, userId);
+      toolsUsed.push(toolCall.name);
+
+      if (result.imageBuffer && result.filename) {
+        generatedImage = { buffer: result.imageBuffer, filename: result.filename };
+      }
+
+      context.push({
+        role: "tool",
+        name: toolCall.name,
+        content: result.success
+          ? (result.result ?? "Tool executed successfully.")
+          : `Error: ${result.error ?? "Unknown error"}`,
+      });
+    } catch (error) {
+      log.error(
+        `Tool ${toolCall.name} failed: ${error instanceof Error ? error.message : "Unknown"}`
+      );
+      context.push({ role: "tool", name: toolCall.name, content: `Error: Tool execution failed.` });
+    }
+
+    return generatedImage;
+  }
+
+  /**
+   * Finalize response and save to memory
+   */
+  private async finalizeResponse(params: {
+    response: string;
+    message: string;
+    userId: string;
+    channelId: string;
+    guildId: string | null | undefined;
+    toolsUsed: string[];
+    iterations: number;
+    generatedImage: { buffer: Buffer; filename: string } | undefined;
+  }): Promise<OrchestratorResponse> {
+    const { response, message, userId, channelId, guildId, toolsUsed, iterations, generatedImage } =
+      params;
+    const finalResponse = this.cleanResponse(response);
+    const memoryManager = getMemoryManager();
+
+    await conversationStore.addMessage(userId, channelId, guildId ?? null, {
+      role: "assistant",
+      content: finalResponse,
+    });
+
+    void this.checkAndTriggerSummarization(userId, channelId).catch((err: Error) => {
+      log.error(`Summarization check failed: ${err.message}`);
+    });
+
+    void memoryManager
+      .addFromConversation(userId, [
+        { role: "user", content: message },
+        { role: "assistant", content: finalResponse },
+      ])
+      .catch((err: Error) => {
+        log.error(`Memory storage failed: ${err.message}`);
+      });
+
+    return {
+      content: finalResponse,
+      toolsUsed: [...new Set(toolsUsed)],
+      iterations,
+      generatedImage,
+    };
+  }
+
   async run(message: string, options: OrchestratorOptions): Promise<OrchestratorResponse> {
     const {
       user,
@@ -125,72 +261,44 @@ export class Orchestrator {
       maxIterations = DEFAULT_MAX_ITERATIONS,
       temperature = 0.7,
     } = options;
-
     const userId = user.id;
     const displayName = member?.displayName ?? user.displayName ?? user.username;
-    const username = user.username;
 
-    // Step 1: Security check - detect impersonation/injection
-    const securityCheck = detectImpersonation(message, displayName, username);
-    if (securityCheck.detected && securityCheck.confidence > 0.8) {
-      const threatTypes = securityCheck.threats.map((t: ThreatDetail) => t.type).join(", ");
-      log.warn(`Blocked message from ${user.tag}: ${threatTypes}`);
-      return {
-        content: "I noticed something unusual in your message. Could you rephrase that?",
-        toolsUsed: [],
-        iterations: 0,
-        blocked: true,
-        blockReason: securityCheck.threats[0]?.description ?? "Security check failed",
-      };
-    }
+    // Step 1: Security check
+    const securityBlocked = this.performSecurityCheck(
+      message,
+      displayName,
+      user.username,
+      user.tag
+    );
+    if (securityBlocked) return securityBlocked;
 
-    // Step 2: Build memory context using three-tier architecture
+    // Step 2: Build memory context
     const memoryManager = getMemoryManager();
     const memoryResult = await memoryManager.buildContextForChat(userId, channelId, message);
     const { systemContext, conversationHistory } = memoryResult;
 
-    // Step 3: Get available tools for this user
+    // Step 3-4: Get tools and build system prompt
     const availableTools = await this.getAvailableTools(userId);
-
-    // Step 4: Build system prompt
     const systemPrompt = this.buildSystemPrompt(systemContext, availableTools);
 
-    // Step 5: Add message to conversation store
+    // Step 5: Add user message to store
     await conversationStore.addMessage(userId, channelId, guildId ?? null, {
       role: "user",
       content: message,
     });
 
-    // Step 6: Build conversation context
+    // Step 6-7: Initialize and run agent loop
     const conversationContext = this.formatConversationHistory(conversationHistory);
-
-    // Step 7: Run the agent loop
-    const context: OrchestratorMessage[] = [];
+    const context = this.initializeAgentContext(conversationContext, message);
     const toolsUsed: string[] = [];
     let iterations = 0;
     let generatedImage: { buffer: Buffer; filename: string } | undefined;
 
-    // Add conversation context
-    if (conversationContext) {
-      context.push({
-        role: "system",
-        content: `Recent conversation:\n${conversationContext}`,
-      });
-    }
-
-    // Add current user message
-    context.push({
-      role: "user",
-      content: message,
-    });
-
     while (iterations < maxIterations) {
       iterations++;
-
-      // Build prompt from context
       const prompt = this.buildPrompt(context);
 
-      // Get LLM response
       let response: string;
       try {
         response = await this.aiService.chat(prompt, {
@@ -199,118 +307,58 @@ export class Orchestrator {
           maxTokens: 4096,
         });
       } catch (error) {
-        log.error(`LLM request failed: ${error instanceof Error ? error.message : "Unknown"}`);
-        return {
-          content: "I'm having trouble thinking right now. Please try again in a moment.",
-          toolsUsed,
-          iterations,
-        };
+        return this.handleLLMError(error, toolsUsed, iterations);
       }
 
-      // Validate LLM output
       if (!validateLLMOutput(response)) {
         log.warn(`LLM output failed validation for user ${userId}`);
         response = "I generated an invalid response. Let me try again differently.";
       }
 
-      // Check for tool call
       const toolCall = this.parseToolCall(response);
+      if (!toolCall) {
+        return this.finalizeResponse({
+          response,
+          message,
+          userId,
+          channelId,
+          guildId,
+          toolsUsed,
+          iterations,
+          generatedImage,
+        });
+      }
 
-      if (toolCall) {
-        // Verify permission for this tool
-        const toolAccess = checkToolAccess(userId, toolCall.name);
-        if (!toolAccess.allowed) {
-          context.push({
-            role: "assistant",
-            content: response,
-          });
-          context.push({
+      const toolAccess = checkToolAccess(userId, toolCall.name);
+      if (!toolAccess.allowed) {
+        context.push(
+          { role: "assistant", content: response },
+          {
             role: "tool",
             name: toolCall.name,
             content: toolAccess.visible ? `Error: ${toolAccess.reason}` : "Error: Unknown tool.",
-          });
-          continue;
-        }
-
-        // Add assistant message with tool call
-        context.push({
-          role: "assistant",
-          content: response,
-        });
-
-        // Execute the tool
-        try {
-          const result = await this.executeTool(toolCall, userId);
-          toolsUsed.push(toolCall.name);
-
-          // Capture generated image if present
-          if (result.imageBuffer && result.filename) {
-            generatedImage = {
-              buffer: result.imageBuffer,
-              filename: result.filename,
-            };
           }
-
-          context.push({
-            role: "tool",
-            name: toolCall.name,
-            content: result.success
-              ? (result.result ?? "Tool executed successfully.")
-              : `Error: ${result.error ?? "Unknown error"}`,
-          });
-        } catch (error) {
-          log.error(
-            `Tool ${toolCall.name} failed: ${error instanceof Error ? error.message : "Unknown"}`
-          );
-          context.push({
-            role: "tool",
-            name: toolCall.name,
-            content: `Error: Tool execution failed.`,
-          });
-        }
-      } else {
-        // No tool call - this is the final response
-        const finalResponse = this.cleanResponse(response);
-
-        // Save assistant response to conversation store
-        await conversationStore.addMessage(userId, channelId, guildId ?? null, {
-          role: "assistant",
-          content: finalResponse,
-        });
-
-        // Check if we should trigger summarization (background, non-blocking)
-        void this.checkAndTriggerSummarization(userId, channelId).catch((err: Error) => {
-          log.error(`Summarization check failed: ${err.message}`);
-        });
-
-        // Store to long-term memory (background, non-blocking)
-        void memoryManager
-          .addFromConversation(userId, [
-            { role: "user", content: message },
-            { role: "assistant", content: finalResponse },
-          ])
-          .catch((err: Error) => {
-            log.error(`Memory storage failed: ${err.message}`);
-          });
-
-        return {
-          content: finalResponse,
-          toolsUsed: [...new Set(toolsUsed)],
-          iterations,
-          generatedImage,
-        };
+        );
+        continue;
       }
+
+      const imageResult = await this.executeToolAndUpdateContext(
+        toolCall,
+        userId,
+        context,
+        toolsUsed,
+        response
+      );
+      if (imageResult) generatedImage = imageResult;
     }
 
     // Max iterations reached
     const fallbackResponse =
       "I've done extensive research but couldn't complete the task fully. Here's what I found.";
-
     await conversationStore.addMessage(userId, channelId, guildId ?? null, {
       role: "assistant",
       content: fallbackResponse,
     });
-
     return {
       content: fallbackResponse,
       toolsUsed: [...new Set(toolsUsed)],
@@ -455,7 +503,7 @@ ${memoryContext || "No previous context available."}
     ];
 
     for (const pattern of patterns) {
-      const match = response.match(pattern);
+      const match = pattern.exec(response);
       if (match) {
         try {
           const jsonStr = match[1] ?? match[0];
@@ -728,8 +776,8 @@ ${memoryContext || "No previous context available."}
    */
   private cleanResponse(response: string): string {
     return response
-      .replace(/```json[\s\S]*?```/gi, "")
-      .replace(/\{"tool"[\s\S]*?\}/g, "")
+      .replaceAll(/```json[\s\S]*?```/gi, "")
+      .replaceAll(/\{"tool"[\s\S]*?\}/g, "")
       .trim();
   }
 
@@ -748,9 +796,7 @@ let orchestratorInstance: Orchestrator | null = null;
  * Get the orchestrator singleton
  */
 export function getOrchestrator(): Orchestrator {
-  if (!orchestratorInstance) {
-    orchestratorInstance = new Orchestrator();
-  }
+  orchestratorInstance ??= new Orchestrator();
   return orchestratorInstance;
 }
 

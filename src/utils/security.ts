@@ -20,7 +20,7 @@ const PII_PATTERNS = [
   },
   // Phone numbers (various formats)
   {
-    pattern: /(\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}/g,
+    pattern: /(\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g,
     replacement: "[PHONE REDACTED]",
     name: "phone",
   },
@@ -180,7 +180,7 @@ export function validatePrompt(text: string): ValidationResult {
       return {
         valid: false,
         blocked: severity === "high",
-        reason: `Detected ${name.replace(/_/g, " ")} attempt`,
+        reason: `Detected ${name.replaceAll("_", " ")} attempt`,
         severity: severity as "high" | "medium",
         warnings: [],
       };
@@ -233,7 +233,7 @@ export function securityCheck(text: string): {
  * @returns Escaped text safe for Discord
  */
 export function escapeMarkdown(text: string): string {
-  return text.replace(/([*_`~|\\])/g, "\\$1");
+  return text.replaceAll(/([*_`~|\\])/g, String.raw`\$1`);
 }
 
 /**
@@ -254,9 +254,9 @@ export function truncateText(text: string, maxLength = 2000): string {
  */
 export function cleanForLogging(text: string): string {
   if (!text) return "";
-  return text
-    .replace(/[\x00-\x1F\x7F]/g, "") // Remove control characters
-    .slice(0, 500); // Limit log length
+  // NOSONAR - Intentionally matching control characters for sanitization
+  const controlCharsPattern = /[\u0000-\u001F\u007F]/g; // NOSONAR
+  return text.replaceAll(controlCharsPattern, "").slice(0, 500); // Limit log length
 }
 
 // ============ Prompt Injection Defense ============
@@ -392,9 +392,9 @@ const TOOL_ABUSE_PATTERNS = [
     severity: "high" as const,
     message: "System path access attempt detected",
   },
-  // Windows system path access
+  // Windows system path access (NOSONAR - character class intentionally matches non-path chars)
   {
-    pattern: /^[A-Za-z]:\\(?:Windows|Program Files|System32|Users\\[^\\]+\\AppData)/i,
+    pattern: /^[A-Za-z]:\\(?:Windows|Program Files|System32|Users\\[^\\/]+\\AppData)/i, // NOSONAR
     name: "windows_system_access",
     severity: "high" as const,
     message: "Windows system path access attempt detected",
@@ -486,6 +486,58 @@ export interface ToolValidationResult {
  * @param args - Arguments passed to the tool
  * @returns Validation result with sanitization info
  */
+/**
+ * Check a string value for abuse patterns
+ */
+function checkValueForAbusePatterns(
+  value: string,
+  key: string
+): { blocked: true; result: ToolValidationResult } | { blocked: false } {
+  for (const { pattern, name, severity, message } of TOOL_ABUSE_PATTERNS) {
+    pattern.lastIndex = 0;
+    if (pattern.test(value)) {
+      return {
+        blocked: true,
+        result: {
+          valid: false,
+          blocked: severity === "high",
+          reason: `${message} in argument "${key}" (${name})`,
+          severity,
+          sanitizedArgs: null,
+        },
+      };
+    }
+  }
+  return { blocked: false };
+}
+
+/**
+ * Check if a path-like argument has dangerous extension
+ */
+function checkDangerousExtension(
+  value: string,
+  key: string
+): { blocked: true; result: ToolValidationResult } | { blocked: false } {
+  if (!key.toLowerCase().includes("path") && !key.toLowerCase().includes("file")) {
+    return { blocked: false };
+  }
+
+  const ext = /\.[a-z0-9]+$/.exec(value.toLowerCase())?.[0];
+  if (ext && DANGEROUS_EXTENSIONS.has(ext)) {
+    return {
+      blocked: true,
+      result: {
+        valid: false,
+        blocked: true,
+        reason: `Dangerous file extension "${ext}" in argument "${key}"`,
+        severity: "high",
+        sanitizedArgs: null,
+      },
+    };
+  }
+  return { blocked: false };
+}
+
 export function validateToolRequest(
   toolName: string,
   args: Record<string, unknown>
@@ -501,48 +553,24 @@ export function validateToolRequest(
     };
   }
 
-  // Check each argument
   const sanitizedArgs: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(args)) {
-    // Only check string values for abuse patterns
-    if (typeof value === "string") {
-      // Check for abuse patterns
-      for (const { pattern, name, severity, message } of TOOL_ABUSE_PATTERNS) {
-        pattern.lastIndex = 0;
-        if (pattern.test(value)) {
-          return {
-            valid: false,
-            blocked: severity === "high",
-            reason: `${message} in argument "${key}" (${name})`,
-            severity,
-            sanitizedArgs: null,
-          };
-        }
-      }
-
-      // Check for dangerous file extensions in path-like arguments
-      if (key.toLowerCase().includes("path") || key.toLowerCase().includes("file")) {
-        const ext = /\.[a-z0-9]+$/.exec(value.toLowerCase())?.[0];
-        if (ext && DANGEROUS_EXTENSIONS.has(ext)) {
-          return {
-            valid: false,
-            blocked: true,
-            reason: `Dangerous file extension "${ext}" in argument "${key}"`,
-            severity: "high",
-            sanitizedArgs: null,
-          };
-        }
-      }
-
-      // Sanitize the value (remove null bytes, normalize path separators)
-      sanitizedArgs[key] = value
-        .replace(/\x00/g, "") // Remove null bytes
-        .replace(/\r\n/g, "\n"); // Normalize line endings
-    } else {
-      // Pass through non-string values
+    if (typeof value !== "string") {
       sanitizedArgs[key] = value;
+      continue;
     }
+
+    // Check for abuse patterns
+    const abuseCheck = checkValueForAbusePatterns(value, key);
+    if (abuseCheck.blocked) return abuseCheck.result;
+
+    // Check for dangerous file extensions
+    const extCheck = checkDangerousExtension(value, key);
+    if (extCheck.blocked) return extCheck.result;
+
+    // Sanitize the value
+    sanitizedArgs[key] = value.replaceAll("\0", "").replaceAll("\r\n", "\n");
   }
 
   return {
@@ -575,7 +603,7 @@ export function isUrlSafe(url: string): { safe: boolean; reason?: string } {
       hostname === "::1" ||
       hostname.startsWith("192.168.") ||
       hostname.startsWith("10.") ||
-      /^172\.(1[6-9]|2[0-9]|3[01])\./.exec(hostname) ||
+      /^172\.(1[6-9]|2\d|3[01])\./.exec(hostname) ||
       hostname.endsWith(".local") ||
       hostname.endsWith(".internal")
     ) {
@@ -616,7 +644,7 @@ export function stripHtmlTags(html: string, maxLength = 4000): string {
   });
 
   // Clean up whitespace and limit length
-  return clean.replace(/\s+/g, " ").trim().slice(0, maxLength);
+  return clean.replaceAll(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 /**

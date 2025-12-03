@@ -21,7 +21,7 @@ jobs:
       security-events: write
 
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep@sha256:68e17391b5b2b5d69f76d990549911765acf88be7f61ddfe166cea6152123704
 
     steps:
       - name: Checkout repository

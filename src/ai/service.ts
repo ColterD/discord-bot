@@ -84,13 +84,43 @@ function formatUnknownError(error: unknown): string {
 }
 
 /**
+ * Unified error handler for LLM API calls.
+ * Converts Axios errors and unknown errors into user-friendly Error objects.
+ * @param error - The caught error
+ * @param operation - Name of the operation (e.g., "chat", "generate")
+ * @param elapsedMs - Time elapsed before the error occurred
+ */
+function handleLLMError(error: unknown, operation: string, elapsedMs: number): never {
+  if (axios.isAxiosError(error)) {
+    if (error.code === "ECONNREFUSED") {
+      throw new Error(
+        "Cannot connect to LLM server. Make sure Ollama is running on your host machine.",
+        { cause: error }
+      );
+    }
+
+    if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
+      throw new Error(`LLM API error (${operation}): request timed out after ${elapsedMs}ms`, {
+        cause: error,
+      });
+    }
+
+    throw new Error(`LLM API error (${operation}): ${error.message}`, { cause: error });
+  }
+
+  throw new Error(`Unexpected error in LLM ${operation}: ${formatUnknownError(error)}`, {
+    cause: error,
+  });
+}
+
+/**
  * AI Service for Local LLM Integration
  * Connects to Ollama running on your local machine (4090)
  * Using host.docker.internal to access host from within Docker container
  * Supports automatic sleep mode after inactivity
  */
 export class AIService {
-  private client: AxiosInstance;
+  private readonly client: AxiosInstance;
   private model: string;
   private isPreloaded = false;
   private isAsleep = true; // Start asleep, wake on first request or preload
@@ -143,9 +173,15 @@ export class AIService {
     // Fixed delays in milliseconds - no external data influence
     const FIXED_DELAYS = [1000, 2000, 4000] as const;
     // Clamp index to valid range using only constants
-    const safeIndex = retryIndex < 0 ? 0 : retryIndex > 2 ? 2 : Math.floor(retryIndex);
-    // TypeScript needs explicit handling - we know the index is 0, 1, or 2
-    return FIXED_DELAYS[safeIndex as 0 | 1 | 2];
+    let safeIndex: 0 | 1 | 2;
+    if (retryIndex < 0) {
+      safeIndex = 0;
+    } else if (retryIndex > 2) {
+      safeIndex = 2;
+    } else {
+      safeIndex = Math.floor(retryIndex) as 0 | 1 | 2;
+    }
+    return FIXED_DELAYS[safeIndex];
   }
 
   /**
@@ -232,7 +268,7 @@ export class AIService {
           log.error(`Request failed: ${url} - ${errorCode} - ${error.message}`);
         }
 
-        return Promise.reject(error);
+        throw error;
       }
     );
   }
@@ -536,29 +572,7 @@ export class AIService {
       return outputValidation.sanitized;
     } catch (error) {
       const elapsed = Date.now() - startTime;
-      if (axios.isAxiosError(error)) {
-        if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
-          );
-          (err as any).cause = error;
-          throw err;
-        }
-
-        if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(`LLM API error (chat): request timed out after ${elapsed}ms`);
-          (err as any).cause = error;
-          throw err;
-        }
-
-        const err = new Error(`LLM API error (chat): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
-      }
-
-      const err = new Error(`Unexpected error in LLM chat: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      handleLLMError(error, "chat", elapsed);
     }
   }
 
@@ -617,29 +631,7 @@ export class AIService {
       return outputValidation.sanitized;
     } catch (error) {
       const elapsed = Date.now() - startTime;
-      if (axios.isAxiosError(error)) {
-        if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
-          );
-          (err as any).cause = error;
-          throw err;
-        }
-
-        if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(`LLM API error (generate): request timed out after ${elapsed}ms`);
-          (err as any).cause = error;
-          throw err;
-        }
-
-        const err = new Error(`LLM API error (generate): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
-      }
-
-      const err = new Error(`Unexpected error in LLM generate: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      handleLLMError(error, "generate", elapsed);
     }
   }
 
@@ -700,33 +692,7 @@ export class AIService {
       return outputValidation.sanitized;
     } catch (error) {
       const elapsed = Date.now() - startTime;
-      if (axios.isAxiosError(error)) {
-        if (error.code === "ECONNREFUSED") {
-          const err = new Error(
-            "Cannot connect to LLM server. Make sure Ollama is running on your host machine."
-          );
-          (err as any).cause = error;
-          throw err;
-        }
-
-        if (error.code === "ETIMEDOUT" || error.code === "ECONNABORTED") {
-          const err = new Error(
-            `LLM API error (chatWithMessages): request timed out after ${elapsed}ms`
-          );
-          (err as any).cause = error;
-          throw err;
-        }
-
-        const err = new Error(`LLM API error (chatWithMessages): ${error.message}`);
-        (err as any).cause = error;
-        throw err;
-      }
-
-      const err = new Error(
-        `Unexpected error in LLM chatWithMessages: ${formatUnknownError(error)}`
-      );
-      (err as any).cause = error;
-      throw err;
+      handleLLMError(error, "chatWithMessages", elapsed);
     }
   }
 
@@ -753,14 +719,7 @@ export class AIService {
       const response = await this.client.get<{ models: { name: string }[] }>("/api/tags");
       return response.data.models.map((m) => m.name);
     } catch (error) {
-      if (axios.isAxiosError(error)) {
-        const err = new Error(`Failed to list models: ${error.message}`);
-        (err as any).cause = error;
-        throw err;
-      }
-      const err = new Error(`Unexpected error listing models: ${formatUnknownError(error)}`);
-      (err as any).cause = error;
-      throw err;
+      handleLLMError(error, "listModels", 0);
     }
   }
 
@@ -787,9 +746,7 @@ export class AIService {
 let instance: AIService | null = null;
 
 export function getAIService(): AIService {
-  if (!instance) {
-    instance = new AIService();
-  }
+  instance ??= new AIService();
   return instance;
 }
 

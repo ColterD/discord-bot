@@ -25,12 +25,12 @@ const MAX_CONTEXT_MESSAGES = 20;
  * Conversation Service - Manages multi-turn conversations with memory
  */
 export class ConversationService {
-  private aiService: AIService;
-  private agentService: AgentService;
-  private conversations = new Map<string, ConversationContext>();
+  private readonly aiService: AIService;
+  private readonly agentService: AgentService;
+  private readonly conversations = new Map<string, ConversationContext>();
   private isAvailable: boolean | null = null;
   private lastHealthCheck = 0;
-  private healthCheckInterval = 30000; // Check every 30 seconds
+  private readonly healthCheckInterval = 30000; // Check every 30 seconds
 
   constructor() {
     this.aiService = new AIService();
@@ -290,9 +290,7 @@ ${memoryContext}`;
 let instance: ConversationService | null = null;
 
 export function getConversationService(): ConversationService {
-  if (!instance) {
-    instance = new ConversationService();
-  }
+  instance ??= new ConversationService();
   return instance;
 }
 

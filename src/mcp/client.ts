@@ -6,7 +6,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod/v4";
-import { readFile } from "fs/promises";
+import { readFile } from "node:fs/promises";
 import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -63,8 +63,8 @@ interface McpConnection {
  */
 export class McpClientManager {
   private static instance: McpClientManager | null = null;
-  private connections = new Map<string, McpConnection>();
-  private configPath: string;
+  private readonly connections = new Map<string, McpConnection>();
+  private readonly configPath: string;
   private initialized = false;
 
   private constructor() {
@@ -72,9 +72,7 @@ export class McpClientManager {
   }
 
   static getInstance(): McpClientManager {
-    if (!McpClientManager.instance) {
-      McpClientManager.instance = new McpClientManager();
-    }
+    McpClientManager.instance ??= new McpClientManager();
     return McpClientManager.instance;
   }
 
@@ -137,7 +135,7 @@ export class McpClientManager {
    */
   private expandEnvVars(obj: unknown): unknown {
     if (typeof obj === "string") {
-      return obj.replace(/\$\{([^}]+)\}/g, (_, envVar) => {
+      return obj.replaceAll(/\$\{([^}]+)\}/g, (_, envVar) => {
         return process.env[envVar] ?? "";
       });
     }
@@ -203,7 +201,7 @@ export class McpClientManager {
       description: tool.description ?? "",
       inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
       serverName,
-      permissions: (serverConfig.metadata?.permissions ?? "public") as McpTool["permissions"],
+      permissions: serverConfig.metadata?.permissions ?? "public",
     }));
 
     const connection: McpConnection = {

@@ -41,7 +41,7 @@ function globMatch(pattern: string, key: string): boolean {
       starIdx = pi;
       matchIdx = ki;
       pi++;
-    } else if (starIdx !== -1) {
+    } else if (starIdx >= 0) {
       // Mismatch, but we have a star to backtrack to
       pi = starIdx + 1;
       matchIdx++;
@@ -79,7 +79,7 @@ export interface CacheClient {
  * In-memory fallback cache for when Valkey is unavailable
  */
 export class InMemoryCache implements CacheClient {
-  private store = new Map<string, { value: string; expiresAt: number | null }>();
+  private readonly store = new Map<string, { value: string; expiresAt: number | null }>();
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -111,7 +111,7 @@ export class InMemoryCache implements CacheClient {
   async set(key: string, value: string, ttlMs?: number): Promise<void> {
     this.store.set(key, {
       value,
-      expiresAt: ttlMs !== undefined ? Date.now() + ttlMs : null,
+      expiresAt: ttlMs === undefined ? null : Date.now() + ttlMs,
     });
   }
 
@@ -173,7 +173,7 @@ export class InMemoryCache implements CacheClient {
  * Valkey cache client wrapper
  */
 export class ValkeyCache implements CacheClient {
-  private client: Valkey;
+  private readonly client: Valkey;
   private connected = false;
   private readonly keyPrefix: string;
 
@@ -228,10 +228,10 @@ export class ValkeyCache implements CacheClient {
 
   async set(key: string, value: string, ttlMs?: number): Promise<void> {
     const prefixedKey = this.prefixKey(key);
-    if (ttlMs !== undefined) {
-      await this.client.set(prefixedKey, value, "PX", ttlMs);
-    } else {
+    if (ttlMs === undefined) {
       await this.client.set(prefixedKey, value);
+    } else {
+      await this.client.set(prefixedKey, value, "PX", ttlMs);
     }
   }
 
@@ -275,7 +275,7 @@ export class ValkeyCache implements CacheClient {
 class CacheManager {
   private static instance: CacheManager | null = null;
   private cache: CacheClient;
-  private fallbackCache: InMemoryCache;
+  private readonly fallbackCache: InMemoryCache;
   private usingFallback = false;
 
   private constructor() {
@@ -284,9 +284,7 @@ class CacheManager {
   }
 
   static getInstance(): CacheManager {
-    if (!CacheManager.instance) {
-      CacheManager.instance = new CacheManager();
-    }
+    CacheManager.instance ??= new CacheManager();
     return CacheManager.instance;
   }
 

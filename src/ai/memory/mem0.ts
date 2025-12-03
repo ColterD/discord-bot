@@ -26,7 +26,7 @@ export const getMem0Client = (): Memory => {
   // Extract host and port from Qdrant URL
   const qdrantUrl = new URL(config.qdrant.url);
   const qdrantHost = qdrantUrl.hostname;
-  const qdrantPort = parseInt(qdrantUrl.port || "6333", 10);
+  const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
 
   // Note: mem0ai uses 'url' for Ollama embedder but has a bug in OllamaLLM
   // that looks for config.config.url instead of config.url.

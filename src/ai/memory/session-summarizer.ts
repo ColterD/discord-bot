@@ -25,7 +25,7 @@ interface SummarizationTask {
  * SessionSummarizer - handles background conversation summarization
  */
 export class SessionSummarizer {
-  private queue: SummarizationTask[] = [];
+  private readonly queue: SummarizationTask[] = [];
   private processing = false;
   private readonly model: string;
   private readonly apiUrl: string;

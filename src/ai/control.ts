@@ -14,8 +14,8 @@ interface OllamaStatus {
  * AI Control Service - manages Ollama lifecycle
  */
 export class AIControlService {
-  private ollamaHost: string;
-  private modelName: string;
+  private readonly ollamaHost: string;
+  private readonly modelName: string;
   private manuallyDisabled = false;
 
   constructor() {
@@ -158,8 +158,14 @@ export class AIControlService {
         success: true,
         message: `Model ${this.modelName} unloaded from GPU memory.`,
       };
-    } catch (_error) {
+    } catch (error) {
       // Connection refused usually means Ollama is not running, which is fine
+      // Log at debug level for troubleshooting
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes("ECONNREFUSED")) {
+        // Only log unexpected errors
+        console.debug("Unload model error (non-critical):", message);
+      }
       return {
         success: true,
         message: "Model unloaded (Ollama not responding).",
@@ -208,8 +214,6 @@ export class AIControlService {
 let aiControlService: AIControlService | null = null;
 
 export function getAIControlService(): AIControlService {
-  if (!aiControlService) {
-    aiControlService = new AIControlService();
-  }
+  aiControlService ??= new AIControlService();
   return aiControlService;
 }

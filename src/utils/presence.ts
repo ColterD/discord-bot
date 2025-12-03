@@ -115,11 +115,8 @@ async function checkCachedAvailability(): Promise<boolean> {
       consecutiveFailures++;
 
       // Only mark as offline after multiple consecutive failures
-      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
-        cachedAvailability = false;
-      }
-      // Otherwise keep previous state (if we had one)
-      else if (cachedAvailability === null) {
+      // or if we don't have a cached value yet
+      if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES || cachedAvailability === null) {
         cachedAvailability = false;
       }
       // If we were previously online, stay online until enough failures
@@ -162,6 +159,47 @@ export function startPresenceUpdater(client: Client): void {
   setInterval(() => updatePresence(), UPDATE_INTERVAL);
 }
 
+interface PresenceState {
+  status: PresenceStatusData;
+  activityName: string;
+}
+
+/**
+ * Helper: Determine presence state based on current conditions
+ */
+function determinePresenceState(
+  isOnline: boolean,
+  isSleeping: boolean,
+  active: number,
+  queued: number
+): PresenceState {
+  if (!isOnline) {
+    return { status: "idle", activityName: "🔧 AI Offline | /help" };
+  }
+
+  if (isSleeping && active === 0 && queued === 0) {
+    return { status: "idle", activityName: "😴 Sleeping | @mention to wake" };
+  }
+
+  if (active > 0 || queued > 0) {
+    let activityName = `💭 ${active} active`;
+    if (queued > 0) {
+      activityName += ` • ${queued} queued`;
+    }
+    if (stats.lastResponseTime > 0) {
+      activityName += ` • ~${formatResponseTime(stats.averageResponseTime)}`;
+    }
+    return { status: "dnd", activityName };
+  }
+
+  // Idle, ready for requests
+  const activityName =
+    stats.totalRequests > 0
+      ? `✨ Ready • ${stats.totalRequests} chats • ~${formatResponseTime(stats.averageResponseTime)}`
+      : "✨ Ready | @mention me!";
+  return { status: "online", activityName };
+}
+
 /**
  * Core presence update logic - extracted for reuse
  */
@@ -174,38 +212,7 @@ async function updatePresence(): Promise<void> {
     const isOnline = await checkCachedAvailability();
     const { active, queued } = getQueueStats();
 
-    let status: PresenceStatusData;
-    let activityName: string;
-
-    if (!isOnline) {
-      // AI is offline (Ollama not reachable)
-      status = "idle";
-      activityName = "🔧 AI Offline | /help";
-    } else if (isSleeping && active === 0 && queued === 0) {
-      // Model is sleeping (unloaded from GPU) but Ollama is reachable
-      status = "idle";
-      activityName = "😴 Sleeping | @mention to wake";
-    } else if (active > 0 || queued > 0) {
-      // Processing requests
-      status = "dnd";
-      activityName = `💭 ${active} active`;
-      if (queued > 0) {
-        activityName += ` • ${queued} queued`;
-      }
-      if (stats.lastResponseTime > 0) {
-        activityName += ` • ~${formatResponseTime(stats.averageResponseTime)}`;
-      }
-    } else {
-      // Idle, ready for requests
-      status = "online";
-      if (stats.totalRequests > 0) {
-        activityName = `✨ Ready • ${
-          stats.totalRequests
-        } chats • ~${formatResponseTime(stats.averageResponseTime)}`;
-      } else {
-        activityName = "✨ Ready | @mention me!";
-      }
-    }
+    const { status, activityName } = determinePresenceState(isOnline, isSleeping, active, queued);
 
     // Only update presence if something actually changed
     if (status === lastStatus && activityName === lastActivityName) {

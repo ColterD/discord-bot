@@ -29,28 +29,28 @@ export const config = {
     model:
       process.env.LLM_MODEL ??
       "hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1",
-    maxTokens: parseInt(process.env.LLM_MAX_TOKENS ?? "4096", 10),
-    temperature: parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
+    maxTokens: Number.parseInt(process.env.LLM_MAX_TOKENS ?? "4096", 10),
+    temperature: Number.parseFloat(process.env.LLM_TEMPERATURE ?? "0.7"),
     // Keep model loaded in GPU memory (seconds, -1 = forever)
     // Using 300 (5 minutes) to balance response time and GPU memory
-    keepAlive: parseInt(process.env.LLM_KEEP_ALIVE ?? "300", 10),
+    keepAlive: Number.parseInt(process.env.LLM_KEEP_ALIVE ?? "300", 10),
     // Preload model on startup for faster first response
     preloadOnStartup: process.env.LLM_PRELOAD !== "false",
     // Inactivity timeout before sleeping (ms) - default 5 minutes
-    sleepAfterMs: parseInt(process.env.LLM_SLEEP_AFTER_MS ?? "300000", 10),
+    sleepAfterMs: Number.parseInt(process.env.LLM_SLEEP_AFTER_MS ?? "300000", 10),
     // Use Orchestrator for enhanced tool-aware conversations
     useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
     // HERETIC-specific settings for optimal performance
     heretic: {
       // Recommended experts for MoE model (4-6)
-      numExperts: parseInt(process.env.LLM_NUM_EXPERTS ?? "5", 10),
+      numExperts: Number.parseInt(process.env.LLM_NUM_EXPERTS ?? "5", 10),
       // Repetition penalty (1.0-1.1 recommended)
-      repPen: parseFloat(process.env.LLM_REP_PEN ?? "1.1"),
+      repPen: Number.parseFloat(process.env.LLM_REP_PEN ?? "1.1"),
       // Temperature for coding (0.6) vs creative (1.0-1.2)
-      tempCoding: parseFloat(process.env.LLM_TEMP_CODING ?? "0.6"),
-      tempCreative: parseFloat(process.env.LLM_TEMP_CREATIVE ?? "1.0"),
+      tempCoding: Number.parseFloat(process.env.LLM_TEMP_CODING ?? "0.6"),
+      tempCreative: Number.parseFloat(process.env.LLM_TEMP_CREATIVE ?? "1.0"),
       // Context length (32k max, 8k minimum recommended)
-      contextLength: parseInt(process.env.LLM_CONTEXT_LENGTH ?? "8192", 10),
+      contextLength: Number.parseInt(process.env.LLM_CONTEXT_LENGTH ?? "8192", 10),
     },
   },
 
@@ -69,7 +69,7 @@ export const config = {
   valkey: {
     url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
     // Conversation TTL (30 minutes of inactivity)
-    conversationTtlMs: parseInt(process.env.VALKEY_CONVERSATION_TTL_MS ?? "1800000", 10),
+    conversationTtlMs: Number.parseInt(process.env.VALKEY_CONVERSATION_TTL_MS ?? "1800000", 10),
     // Session prefix for namespacing
     keyPrefix: process.env.VALKEY_KEY_PREFIX ?? "discord-bot:",
   },
@@ -92,10 +92,10 @@ export const config = {
   // Memory Configuration (Mem0 + Three-tier architecture)
   memory: {
     // Summarization triggers
-    summarizeAfterMessages: parseInt(process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15", 10),
-    summarizeAfterIdleMs: parseInt(process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000", 10), // 30 minutes
+    summarizeAfterMessages: Number.parseInt(process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15", 10),
+    summarizeAfterIdleMs: Number.parseInt(process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000", 10), // 30 minutes
     // Context window allocation
-    maxContextTokens: parseInt(process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "4096", 10),
+    maxContextTokens: Number.parseInt(process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "4096", 10),
     // Tier allocation percentages
     tierAllocation: {
       activeContext: 0.5, // 50% for current conversation
@@ -109,9 +109,9 @@ export const config = {
     // Config file location
     configPath: process.env.MCP_CONFIG_PATH ?? "./mcp-servers.json",
     // Connection timeout
-    connectionTimeoutMs: parseInt(process.env.MCP_CONNECTION_TIMEOUT_MS ?? "30000", 10),
+    connectionTimeoutMs: Number.parseInt(process.env.MCP_CONNECTION_TIMEOUT_MS ?? "30000", 10),
     // Request timeout
-    requestTimeoutMs: parseInt(process.env.MCP_REQUEST_TIMEOUT_MS ?? "60000", 10),
+    requestTimeoutMs: Number.parseInt(process.env.MCP_REQUEST_TIMEOUT_MS ?? "60000", 10),
   },
 
   // Security Configuration
@@ -125,7 +125,7 @@ export const config = {
     impersonation: {
       enabled: process.env.SECURITY_IMPERSONATION_ENABLED !== "false",
       // Similarity threshold for name matching (0.0-1.0)
-      similarityThreshold: parseFloat(process.env.SECURITY_SIMILARITY_THRESHOLD ?? "0.7"),
+      similarityThreshold: Number.parseFloat(process.env.SECURITY_SIMILARITY_THRESHOLD ?? "0.7"),
       // Patterns that indicate impersonation attempts
       suspiciousPatterns: [
         /pretend\s+(to\s+)?be/i,
@@ -159,15 +159,15 @@ export const config = {
     // Default workflow for Z-Image-Turbo
     defaultModel: "z-image-turbo",
     // Max queue size to prevent overloading
-    maxQueueSize: parseInt(process.env.COMFYUI_MAX_QUEUE ?? "5", 10),
+    maxQueueSize: Number.parseInt(process.env.COMFYUI_MAX_QUEUE ?? "5", 10),
     // Timeout for image generation (ms) - default 2 minutes
-    timeout: parseInt(process.env.COMFYUI_TIMEOUT ?? "120000", 10),
+    timeout: Number.parseInt(process.env.COMFYUI_TIMEOUT ?? "120000", 10),
   },
 
   // Rate limiting
   rateLimit: {
-    requests: parseInt(process.env.RATE_LIMIT_REQUESTS ?? "10", 10),
-    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10),
+    requests: Number.parseInt(process.env.RATE_LIMIT_REQUESTS ?? "10", 10),
+    windowMs: Number.parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000", 10),
     // Soft limit warnings before hard block
     softLimitThreshold: 0.8, // Warn at 80% of limit
     // Exponential backoff settings

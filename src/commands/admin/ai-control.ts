@@ -65,16 +65,30 @@ export class AdminCommands {
     const controlService = getAIControlService();
     const status = await controlService.getStatus();
 
-    const statusEmoji = status.running ? (status.modelLoaded ? "🟢" : "🟡") : "🔴";
-    const statusText = status.running
-      ? status.modelLoaded
-        ? "Online & Model Loaded"
-        : "Online (Model Not Loaded)"
-      : "Offline";
+    // Determine status emoji and text based on state
+    let statusEmoji: string;
+    let statusText: string;
+    let embedColor: number;
+
+    if (status.running) {
+      if (status.modelLoaded) {
+        statusEmoji = "🟢";
+        statusText = "Online & Model Loaded";
+        embedColor = 0x00ff00;
+      } else {
+        statusEmoji = "🟡";
+        statusText = "Online (Model Not Loaded)";
+        embedColor = 0xffaa00;
+      }
+    } else {
+      statusEmoji = "🔴";
+      statusText = "Offline";
+      embedColor = 0xff0000;
+    }
 
     const embed = new EmbedBuilder()
       .setTitle(`${statusEmoji} AI Status`)
-      .setColor(status.running ? (status.modelLoaded ? 0x00ff00 : 0xffaa00) : 0xff0000)
+      .setColor(embedColor)
       .addFields(
         { name: "Status", value: statusText, inline: true },
         { name: "Model", value: status.model || "Unknown", inline: true },

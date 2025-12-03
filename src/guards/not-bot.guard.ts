@@ -5,7 +5,7 @@ import {
   type CommandInteraction,
   type ContextMenuCommandInteraction,
   type ModalSubmitInteraction,
-  type SelectMenuInteraction,
+  type AnySelectMenuInteraction,
 } from "discord.js";
 
 /**
@@ -17,7 +17,7 @@ export const NotBot: GuardFunction<
   | CommandInteraction
   | ContextMenuCommandInteraction
   | ButtonInteraction
-  | SelectMenuInteraction
+  | AnySelectMenuInteraction
   | ModalSubmitInteraction
   | SimpleCommandMessage
 > = async (arg, _client, next) => {

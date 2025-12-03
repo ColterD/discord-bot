@@ -37,7 +37,7 @@ export class ButtonComponents {
    */
   @ButtonComponent({ id: /^page_prev_\d+$/ })
   async handlePrevPage(interaction: ButtonInteraction): Promise<void> {
-    const currentPage = parseInt(interaction.customId.split("_")[2] ?? "0", 10);
+    const currentPage = Number.parseInt(interaction.customId.split("_")[2] ?? "0", 10);
     const newPage = Math.max(0, currentPage - 1);
 
     await interaction.update({
@@ -51,7 +51,7 @@ export class ButtonComponents {
    */
   @ButtonComponent({ id: /^page_next_\d+$/ })
   async handleNextPage(interaction: ButtonInteraction): Promise<void> {
-    const currentPage = parseInt(interaction.customId.split("_")[2] ?? "0", 10);
+    const currentPage = Number.parseInt(interaction.customId.split("_")[2] ?? "0", 10);
     const newPage = currentPage + 1;
 
     await interaction.update({

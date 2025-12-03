@@ -4,7 +4,7 @@ import type {
   CommandInteraction,
   ContextMenuCommandInteraction,
   ModalSubmitInteraction,
-  SelectMenuInteraction,
+  AnySelectMenuInteraction,
   Snowflake,
 } from "discord.js";
 import { Collection } from "discord.js";
@@ -27,7 +27,7 @@ export function RateLimitGuard(
   | CommandInteraction
   | ContextMenuCommandInteraction
   | ButtonInteraction
-  | SelectMenuInteraction
+  | AnySelectMenuInteraction
   | ModalSubmitInteraction
   | SimpleCommandMessage
 > {

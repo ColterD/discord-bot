@@ -73,4 +73,4 @@ async function deployCommands(): Promise<void> {
   }
 }
 
-deployCommands();
+await deployCommands();

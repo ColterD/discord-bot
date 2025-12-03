@@ -53,6 +53,54 @@ export class AICommands {
     return getRateLimiter();
   }
 
+  /**
+   * Helper: Check rate limit and respond if blocked
+   */
+  private async checkRateLimitAndRespond(
+    interaction: CommandInteraction,
+    userId: string,
+    channelId: string,
+    isDM: boolean
+  ): Promise<{ allowed: false } | { allowed: true; result: { allowed: true; isWarning?: boolean; message?: string | null } }> {
+    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
+    if (!rateLimitResult.allowed) {
+      await interaction.reply({
+        content: rateLimitResult.message ?? "Rate limited. Please wait.",
+        ephemeral: true,
+      });
+      return { allowed: false };
+    }
+    return { allowed: true, result: { allowed: true, isWarning: rateLimitResult.isWarning, message: rateLimitResult.message } };
+  }
+
+  /**
+   * Helper: Validate and sanitize prompt, respond if blocked
+   */
+  private async validatePromptAndRespond(
+    interaction: CommandInteraction,
+    question: string
+  ): Promise<{ valid: boolean; sanitizedText?: string }> {
+    const validation = validatePrompt(question);
+    if (validation.blocked) {
+      await interaction.reply({
+        content: `❌ ${validation.reason ?? "Invalid question"}`,
+        ephemeral: true,
+      });
+      return { valid: false };
+    }
+    const sanitized = sanitizeInput(question);
+    return { valid: true, sanitizedText: sanitized.text };
+  }
+
+  /**
+   * Get temperature value based on mode
+   */
+  private getTemperatureForMode(mode: "creative" | "balanced" | "precise" | undefined): number {
+    if (mode === "creative") return 0.9;
+    if (mode === "precise") return 0.3;
+    return 0.7;
+  }
+
   @Slash({
     name: "ask",
     description: "Ask the AI a question",
@@ -88,39 +136,26 @@ export class AICommands {
     const channelId = interaction.channelId;
     const userId = interaction.user.id;
 
-    // Check rate limit with new system
-    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
-    if (!rateLimitResult.allowed) {
-      await interaction.reply({
-        content: rateLimitResult.message ?? "Rate limited. Please wait.",
-        ephemeral: true,
-      });
-      return;
-    }
+    // Check rate limit
+    const rateLimitCheck = await this.checkRateLimitAndRespond(interaction, userId, channelId, isDM);
+    if (!rateLimitCheck.allowed) return;
+    const rateLimitResult = rateLimitCheck.result;
 
-    // Validate prompt security
-    const validation = validatePrompt(question);
-    if (validation.blocked) {
-      await interaction.reply({
-        content: `❌ ${validation.reason ?? "Invalid question"}`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    // Sanitize input (remove PII)
-    const sanitized = sanitizeInput(question);
+    // Validate and sanitize prompt
+    const promptCheck = await this.validatePromptAndRespond(interaction, question);
+    if (!promptCheck.valid) return;
+    const sanitizedText = promptCheck.sanitizedText!;
 
     await interaction.deferReply();
 
     // Record the request
     this.rateLimiter.recordRequest(userId, channelId, isDM);
 
-    const temperature = mode === "creative" ? 0.9 : mode === "precise" ? 0.3 : 0.7;
+    const temperature = this.getTemperatureForMode(mode);
 
     try {
       // Get memory context for personalization
-      const memoryContext = await this.memoryManager.buildFullContext(userId, sanitized.text);
+      const memoryContext = await this.memoryManager.buildFullContext(userId, sanitizedText);
 
       const systemPrompt = `You are a helpful Discord bot assistant. Be concise and friendly.
 
@@ -140,8 +175,8 @@ ${memoryContext}`;
 
       // Combine question with file context
       const fullQuestion = contextText
-        ? `${sanitized.text}\n\n[User attached a file with the following content:]\n${contextText}`
-        : sanitized.text;
+        ? `${sanitizedText}\n\n[User attached a file with the following content:]\n${contextText}`
+        : sanitizedText;
 
       const response = await this.aiService.chat(fullQuestion, {
         temperature,
@@ -149,7 +184,7 @@ ${memoryContext}`;
       });
 
       // Store memory from conversation (async, don't wait)
-      this.memoryManager.addMemory(userId, `User asked: ${sanitized.text}`).catch(() => {});
+      this.memoryManager.addMemory(userId, `User asked: ${sanitizedText}`).catch(() => {});
 
       // Build footer with rate limit info
       const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);
@@ -339,7 +374,7 @@ ${memoryContext}`;
    */
   private getExtension(filename: string): string {
     const lastDot = filename.lastIndexOf(".");
-    return lastDot !== -1 ? filename.slice(lastDot).toLowerCase() : "";
+    return lastDot >= 0 ? filename.slice(lastDot).toLowerCase() : "";
   }
 
   @Slash({

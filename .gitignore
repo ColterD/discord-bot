@@ -63,3 +63,7 @@ test-results.xml
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .github/instructions/snyk_rules.instructions.md
+
+# Agent workspace files
+.agents/
+eslint-output.json

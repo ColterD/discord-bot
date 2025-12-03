@@ -601,30 +601,32 @@ export function stripHtmlTags(html: string, maxLength = 4000): string {
   }
 
   let content = html;
-  let previousContent = "";
 
-  // Keep iterating until no more changes (handles nested tags)
-  while (previousContent !== content) {
-    previousContent = content;
+  // First pass: aggressively remove dangerous tags and their content
+  // Use a loop with a reasonable iteration limit to prevent infinite loops
+  for (let i = 0; i < 100; i++) {
+    const before = content;
 
-    // Remove complete script tags with content
-    content = content.replace(/<script\b[^>]*>[\s\S]*?<\/\s*script[^>]*>/gi, "");
+    // Remove script/style tags with content, plus standalone opening tags
+    content = content
+      .replace(/<script\b[^>]*>[\s\S]*?<\/\s*script[^>]*>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/\s*style[^>]*>/gi, " ")
+      .replace(/<script\b[^>]*>/gi, " ")
+      .replace(/<style\b[^>]*>/gi, " ");
 
-    // Remove complete style tags with content
-    content = content.replace(/<style\b[^>]*>[\s\S]*?<\/\s*style[^>]*>/gi, "");
-
-    // Remove orphaned/unclosed script opening tags (safety net)
-    content = content.replace(/<script\b[^>]*>/gi, "");
-
-    // Remove orphaned/unclosed style opening tags (safety net)
-    content = content.replace(/<style\b[^>]*>/gi, "");
-
-    // Remove all other HTML tags
-    content = content.replace(/<[^>]+>/g, " ");
+    if (before === content) break;
   }
 
-  // Final safety: remove any remaining < or > that could form partial tags
-  content = content.replace(/[<>]/g, " ");
+  // Second pass: remove remaining HTML tags
+  for (let i = 0; i < 100; i++) {
+    const before = content;
+    content = content.replace(/<[^>]+>/g, " ");
+    if (before === content) break;
+  }
+
+  // Final defense: completely remove any remaining angle brackets
+  // This guarantees no HTML can remain regardless of malformed input
+  content = content.replace(/</g, " ").replace(/>/g, " ");
 
   // Clean up whitespace and limit length
   return content.replace(/\s+/g, " ").trim().slice(0, maxLength);

@@ -148,23 +148,34 @@ jobs:
   snyk:
     name: Snyk Security Scan
     runs-on: ubuntu-latest
-    if: ${{ secrets.SNYK_TOKEN != '' }}
     continue-on-error: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Check if SNYK_TOKEN exists
+        id: snyk-check
+        run: |
+          if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "has_token=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_token=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Setup Node.js
+        if: steps.snyk-check.outputs.has_token == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "22"
           cache: "npm"
 
       - name: Install dependencies
+        if: steps.snyk-check.outputs.has_token == 'true'
         run: npm ci
 
       - name: Run Snyk Code (SAST)
+        if: steps.snyk-check.outputs.has_token == 'true'
         uses: snyk/actions/node@master
         continue-on-error: true
         env:
@@ -174,6 +185,7 @@ jobs:
           args: --severity-threshold=high
 
       - name: Run Snyk Open Source
+        if: steps.snyk-check.outputs.has_token == 'true'
         uses: snyk/actions/node@master
         continue-on-error: true
         env:
@@ -181,3 +193,7 @@ jobs:
         with:
           command: test
           args: --severity-threshold=medium
+
+      - name: Skip notice
+        if: steps.snyk-check.outputs.has_token == 'false'
+        run: echo "Skipping Snyk scan - SNYK_TOKEN not configured"

@@ -1,5 +1,6 @@
 # Dependabot configuration
 # Automatically creates PRs to update dependencies
+# Security updates are handled automatically by GitHub
 
 version: 2
 updates:
@@ -23,6 +24,9 @@ updates:
         update-types:
           - "minor"
           - "patch"
+      # Keep security updates separate and prioritized
+      security:
+        applies-to: security-updates
 
   # Docker base image updates
   - package-ecosystem: "docker"

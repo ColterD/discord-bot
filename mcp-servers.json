@@ -11,15 +11,6 @@
         "permissions": "public",
         "tools": ["resolve-library-id", "get-library-docs"]
       }
-    },
-    "time": {
-      "command": "npx",
-      "args": ["-y", "@modelcontextprotocol/server-time"],
-      "description": "Time server for current date/time awareness",
-      "metadata": {
-        "permissions": "public",
-        "tools": ["get_current_time", "convert_time"]
-      }
     }
   }
 }

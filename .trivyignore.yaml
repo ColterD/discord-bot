@@ -1,0 +1,48 @@
+# Trivy CVE Exclusions for Discord Bot
+# These vulnerabilities exist in the distroless base image and have no upstream fix
+# Research conducted: 2025-12-03
+# All CVEs verified as DISPUTED, won't-fix, or unfixable by upstream maintainers
+#
+# Documentation: https://trivy.dev/latest/docs/configuration/filtering/
+
+vulnerabilities:
+  # GCC/libstdc++ - Debian marks as "unimportant", no security impact in runtime context
+  - id: CVE-2022-27943
+    statement: "Debian marks as unimportant. GCC stack exhaustion on demangler - not exploitable in distroless runtime"
+
+  # OpenSSL DISPUTED - Only affects PowerPC architecture, not applicable to amd64/arm64
+  - id: CVE-2025-27587
+    statement: "DISPUTED - Only affects PowerPC architecture per NVD analysis. Not applicable."
+
+  # Glibc CVEs - All marked as "won't fix" or "not treated as security issue" by upstream
+  - id: CVE-2019-1010022
+    statement: "Debian unimportant. Glibc maintainer disputed - defensive coding issue, not security vulnerability"
+
+  - id: CVE-2019-1010023
+    statement: "Debian unimportant. Glibc maintainer states not a security issue - wiki documentation only"
+
+  - id: CVE-2019-1010024
+    statement: "Debian unimportant. Memory disclosure requires ASLR bypass - extremely limited attack surface"
+
+  - id: CVE-2019-1010025
+    statement: "Debian unimportant. Related to ASLR entropy - disputed by maintainer as not exploitable"
+
+  - id: CVE-2019-9192
+    statement: "Debian won't fix. Excessive stack allocation in regex - DoS only, not exploitable remotely in Discord bot"
+
+  - id: CVE-2018-20796
+    statement: "Debian won't fix. Stack exhaustion in regex for untrusted patterns - not applicable to controlled input"
+
+  - id: CVE-2010-4756
+    statement: "Debian won't fix. 15-year-old glob issue - no practical exploit, won't be fixed"
+
+  # GCC libstdc++ duplicate/related
+  - id: CVE-2023-4039
+    statement: "GCC stack protection bypass - requires local code execution, not applicable in containerized runtime"
+
+  # zlib-related if present
+  - id: CVE-2023-45853
+    statement: "MiniZip integer overflow - only affects 32-bit systems with large files, not applicable"
+
+# Note: These exclusions only apply to the distroless base image vulnerabilities.
+# Application-level vulnerabilities will still be detected and reported.

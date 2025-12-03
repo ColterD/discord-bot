@@ -7,10 +7,8 @@ on:
       - "v*"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  packages: write
-  id-token: write
+# Restrict default permissions to read-only for security
+permissions: read-all
 
 env:
   REGISTRY: ghcr.io
@@ -19,6 +17,10 @@ jobs:
   build:
     name: Build and Sign Container
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image_name: ${{ steps.image_name.outputs.name }}

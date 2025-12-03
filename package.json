@@ -2,6 +2,7 @@
   "name": "discord-bot",
   "version": "1.0.0",
   "description": "A TypeScript Discord bot with AI integration using discordx",
+  "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",

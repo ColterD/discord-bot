@@ -9,14 +9,16 @@ on:
     - cron: "0 0 * * 0" # Weekly on Sunday
   workflow_dispatch:
 
-permissions:
-  contents: read
-  security-events: write
+# Restrict default permissions to read-only for security
+permissions: read-all
 
 jobs:
   semgrep:
     name: Semgrep SAST Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
 
     container:
       image: semgrep/semgrep

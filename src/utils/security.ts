@@ -607,11 +607,13 @@ export function stripHtmlTags(html: string, maxLength = 4000): string {
   while (previousContent !== content) {
     previousContent = content;
 
-    // Remove script tags and their content (handles </script > with spaces)
-    content = content.replace(/<script\b[^>]*>[\s\S]*?<\/\s*script\s*>/gi, "");
+    // Remove script tags and their content
+    // Matches opening tag, any content, and closing tag with any whitespace/attributes
+    content = content.replace(/<script\b[^>]*>[\s\S]*?<\/\s*script[^>]*>/gi, "");
 
-    // Remove style tags and their content (handles </style > with spaces)
-    content = content.replace(/<style\b[^>]*>[\s\S]*?<\/\s*style\s*>/gi, "");
+    // Remove style tags and their content
+    // Matches opening tag, any content, and closing tag with any whitespace/attributes
+    content = content.replace(/<style\b[^>]*>[\s\S]*?<\/\s*style[^>]*>/gi, "");
 
     // Remove all other HTML tags
     content = content.replace(/<[^>]+>/g, " ");

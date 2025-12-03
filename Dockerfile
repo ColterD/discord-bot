@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,6 @@ RUN npm ci
 
 # Copy config files
 COPY tsconfig.json ./
-COPY mcp-servers.json ./
 
 # Copy source files
 COPY src/ ./src/
@@ -20,13 +19,13 @@ COPY src/ ./src/
 RUN npm run build
 
 # Production stage
-FROM node:20-alpine AS production
+FROM node:20-slim AS production
 
 WORKDIR /app
 
 # Create non-root user for security
-RUN addgroup -g 1001 -S discordbot && \
-    adduser -S discordbot -u 1001 -G discordbot
+RUN groupadd -g 1001 discordbot && \
+    useradd -u 1001 -g discordbot -s /bin/false discordbot
 
 # Copy package files and install production dependencies only
 COPY package*.json ./
@@ -34,9 +33,6 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy built files from builder stage
 COPY --from=builder /app/dist ./dist
-
-# Copy MCP server configuration
-COPY --from=builder /app/mcp-servers.json ./
 
 # Create logs directory
 RUN mkdir -p /app/logs && chown -R discordbot:discordbot /app

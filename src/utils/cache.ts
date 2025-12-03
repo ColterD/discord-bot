@@ -10,25 +10,54 @@ import { createLogger } from "./logger.js";
 const log = createLogger("Cache");
 
 /**
- * Escape special regex metacharacters in a string
- * This prevents user-provided patterns from being interpreted as regex
+ * Maximum allowed pattern length to prevent ReDoS attacks
+ * Patterns longer than this are rejected
  */
-function escapeRegex(str: string): string {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+const MAX_PATTERN_LENGTH = 256;
 
 /**
- * Convert a glob pattern to a safe regex pattern
- * Escapes all regex metacharacters first, then converts glob wildcards
+ * Match a key against a glob pattern using simple string matching
+ * Supports * (match any characters) and ? (match single character)
+ * This avoids dynamic RegExp construction which can be vulnerable to ReDoS
  */
-function globToRegex(pattern: string): RegExp {
-  // First escape all regex special characters
-  const escaped = escapeRegex(pattern);
-  // Then convert escaped glob wildcards back to regex equivalents
-  // \* becomes .* (match any characters)
-  // \? becomes . (match single character)
-  const regexPattern = escaped.replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
-  return new RegExp(`^${regexPattern}$`);
+function globMatch(pattern: string, key: string): boolean {
+  // Reject excessively long patterns to prevent DoS
+  if (pattern.length > MAX_PATTERN_LENGTH || key.length > MAX_PATTERN_LENGTH * 4) {
+    return false;
+  }
+
+  let pi = 0; // pattern index
+  let ki = 0; // key index
+  let starIdx = -1; // last star position in pattern
+  let matchIdx = -1; // position in key when star was found
+
+  while (ki < key.length) {
+    if (pi < pattern.length && (pattern[pi] === "?" || pattern[pi] === key[ki])) {
+      // Match single character or exact match
+      pi++;
+      ki++;
+    } else if (pi < pattern.length && pattern[pi] === "*") {
+      // Star found, record position for backtracking
+      starIdx = pi;
+      matchIdx = ki;
+      pi++;
+    } else if (starIdx !== -1) {
+      // Mismatch, but we have a star to backtrack to
+      pi = starIdx + 1;
+      matchIdx++;
+      ki = matchIdx;
+    } else {
+      // No match and no star to backtrack
+      return false;
+    }
+  }
+
+  // Check remaining pattern characters (must all be stars)
+  while (pi < pattern.length && pattern[pi] === "*") {
+    pi++;
+  }
+
+  return pi === pattern.length;
 }
 
 /**
@@ -96,8 +125,7 @@ export class InMemoryCache implements CacheClient {
   }
 
   async keys(pattern: string): Promise<string[]> {
-    // Use safe glob-to-regex conversion that escapes metacharacters
-    const regex = globToRegex(pattern);
+    // Use safe glob matching that avoids dynamic RegExp (ReDoS-safe)
     const matches: string[] = [];
     const now = Date.now();
 
@@ -106,7 +134,7 @@ export class InMemoryCache implements CacheClient {
         this.store.delete(key);
         continue;
       }
-      if (regex.test(key)) {
+      if (globMatch(pattern, key)) {
         matches.push(key);
       }
     }

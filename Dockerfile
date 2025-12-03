@@ -41,5 +41,9 @@ ENV NODE_OPTIONS="--max-old-space-size=384"
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
   CMD ["/nodejs/bin/node", "dist/healthcheck.js"]
 
+# Explicit non-root user (distroless:nonroot uses UID 65532)
+# This satisfies security scanners that require explicit USER directive
+USER nonroot
+
 # Start the bot (distroless uses node as entrypoint)
 CMD ["dist/index.js"]

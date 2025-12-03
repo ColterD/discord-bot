@@ -524,17 +524,17 @@ Do not include raw JSON tool-calls in your final response.`;
       let content = "";
       if (typeof response.data === "string") {
         content = response.data;
-        // Iteratively remove script tags to handle nested cases
+        // Iteratively remove script tags (handles nested cases and spaces in closing tags)
         let prev = "";
         while (prev !== content) {
           prev = content;
-          content = content.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, "");
+          content = content.replace(/<script[^>]*>[\s\S]*?<\/script\s*>/gi, "");
         }
-        // Iteratively remove style tags
+        // Iteratively remove style tags (handles spaces in closing tags)
         prev = "";
         while (prev !== content) {
           prev = content;
-          content = content.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, "");
+          content = content.replace(/<style[^>]*>[\s\S]*?<\/style\s*>/gi, "");
         }
         // Iteratively remove remaining HTML tags
         prev = "";

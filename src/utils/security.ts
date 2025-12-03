@@ -291,8 +291,8 @@ const OUTPUT_INJECTION_PATTERNS = [
   // URL/data injection attempts
   /javascript:/i,
   /data:text\/html/i,
-  // Discord webhook/token patterns
-  /discord(?:app)?\.com\/api\/webhooks/i,
+  // Discord webhook/token patterns - anchored to start of URL path
+  /^https?:\/\/(?:www\.)?discord(?:app)?\.com\/api\/webhooks\//i,
   // Discord bot token pattern with word boundary anchors
   /\b[MN][A-Za-z\d]{23,27}\.[A-Za-z\d_-]{6}\.[A-Za-z\d_-]{27,}\b/,
 ];

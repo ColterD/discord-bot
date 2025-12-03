@@ -6,11 +6,12 @@ useDefault = true
 
 # Project-specific allowlist
 [[allowlists]]
-description = "Ignore test fixtures and examples"
+description = "Ignore test files"
 paths = [
     '''\.env\.example$''',
-    '''tests/fixtures/.*''',
+    '''tests/.*''',
     '''.*\.test\.(ts|js)$''',
+    '''.*\.spec\.(ts|js)$''',
 ]
 
 # Ignore placeholder tokens in documentation
@@ -30,4 +31,12 @@ description = "Ignore npm registry URLs"
 regexTarget = "match"
 regexes = [
     '''registry\.npmjs\.org''',
+]
+
+# Ignore fake Discord tokens in test cases
+[[allowlists]]
+description = "Ignore test Discord token patterns"
+regexTarget = "match"
+regexes = [
+    '''MTE2NTI4NDgzNjE3ODQyMjg4OA\..*''',
 ]

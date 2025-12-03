@@ -7,6 +7,8 @@
  * - Set HEALTHCHECK_EXTENDED=true to check Ollama, Valkey, etc.
  */
 
+import * as net from "net";
+
 interface HealthStatus {
   status: "healthy" | "degraded" | "unhealthy";
   heapUsedMB: number;
@@ -40,8 +42,6 @@ async function checkValkey(): Promise<boolean> {
     const [, host, port] = match;
 
     return new Promise((resolve) => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const net = require("net") as typeof import("net");
       const socket = new net.Socket();
       socket.setTimeout(3000);
 

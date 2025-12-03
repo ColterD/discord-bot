@@ -65,6 +65,13 @@ export default tseslint.config(
 
   // Ignore patterns
   {
-    ignores: ["dist/**", "node_modules/**", "coverage/**", "*.config.js", "*.config.mjs"],
+    ignores: [
+      "dist/**",
+      "node_modules/**",
+      "coverage/**",
+      "*.config.js",
+      "*.config.mjs",
+      "eslint.config.mjs",
+    ],
   }
 );

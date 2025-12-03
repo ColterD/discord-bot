@@ -10,12 +10,19 @@ import {
 import { Discord, Slash, SlashOption, SlashChoice, ContextMenu } from "discordx";
 import { getAIService } from "../../ai/service.js";
 import { getMemoryManager } from "../../ai/memory/index.js";
-import { getRateLimiter, buildRateLimitFooter } from "../../utils/rate-limiter.js";
+import {
+  getRateLimiter,
+  buildRateLimitFooter,
+  type RateLimitResult,
+} from "../../utils/rate-limiter.js";
 import { validatePrompt, sanitizeInput, securityCheck } from "../../utils/security.js";
 import { createLogger } from "../../utils/logger.js";
 import config from "../../config.js";
 
 const log = createLogger("AICommands");
+
+/** Mode options for AI response temperature */
+type AIModeOption = "creative" | "balanced" | "precise" | undefined;
 
 // Supported file types for RAG
 const SUPPORTED_TEXT_TYPES = new Set([
@@ -53,6 +60,112 @@ export class AICommands {
     return getRateLimiter();
   }
 
+  /**
+   * Get temperature value based on mode selection
+   */
+  private getTemperatureForMode(mode: AIModeOption): number {
+    switch (mode) {
+      case "creative":
+        return 0.9;
+      case "precise":
+        return 0.3;
+      default:
+        return 0.7;
+    }
+  }
+
+  /**
+   * Check rate limit and return early response if limited
+   */
+  private async checkAndHandleRateLimit(
+    interaction: CommandInteraction,
+    userId: string,
+    channelId: string,
+    isDM: boolean
+  ): Promise<{ allowed: boolean; result?: RateLimitResult }> {
+    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
+    if (!rateLimitResult.allowed) {
+      await interaction.reply({
+        content: rateLimitResult.message ?? "Rate limited. Please wait.",
+        ephemeral: true,
+      });
+      return { allowed: false };
+    }
+    return { allowed: true, result: rateLimitResult };
+  }
+
+  /**
+   * Validate and sanitize user input
+   */
+  private async validateAndSanitizeInput(
+    interaction: CommandInteraction,
+    question: string
+  ): Promise<{ valid: boolean; sanitized?: ReturnType<typeof sanitizeInput> }> {
+    const validation = validatePrompt(question);
+    if (validation.blocked) {
+      await interaction.reply({
+        content: `❌ ${validation.reason ?? "Invalid question"}`,
+        ephemeral: true,
+      });
+      return { valid: false };
+    }
+    return { valid: true, sanitized: sanitizeInput(question) };
+  }
+
+  /**
+   * Build the AI response embed
+   */
+  private buildResponseEmbed(
+    response: string,
+    mode: AIModeOption,
+    rateLimitFooter: string,
+    rateLimitResult: RateLimitResult,
+    file: Attachment | undefined,
+    contextText: string
+  ): EmbedBuilder {
+    const embed = new EmbedBuilder()
+      .setColor(config.colors.primary)
+      .setTitle("🤖 AI Response")
+      .setDescription(response.slice(0, 4000))
+      .setFooter({
+        text: `${rateLimitFooter} | Mode: ${mode ?? "balanced"}`,
+      })
+      .setTimestamp();
+
+    if (rateLimitResult.isWarning && rateLimitResult.message) {
+      embed.addFields({
+        name: "⚠️ Notice",
+        value: rateLimitResult.message,
+      });
+    }
+
+    if (file && contextText) {
+      embed.addFields({
+        name: "📎 Attached Context",
+        value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)`,
+        inline: true,
+      });
+    }
+
+    return embed;
+  }
+
+  /**
+   * Get file context text from attachment, or empty string if no file or error
+   */
+  private async getFileContextText(file: Attachment | undefined): Promise<string> {
+    if (!file) return "";
+
+    const fileContext = await this.processFileAttachment(file);
+    if (fileContext.success && fileContext.text) {
+      return `\n\n## Attached Document Context:\n${fileContext.text}`;
+    }
+    if (fileContext.error) {
+      log.warn(`File processing failed: ${fileContext.error}`);
+    }
+    return "";
+  }
+
   @Slash({
     name: "ask",
     description: "Ask the AI a question",
@@ -74,7 +187,7 @@ export class AICommands {
       type: ApplicationCommandOptionType.String,
       required: false,
     })
-    mode: "creative" | "balanced" | "precise" | undefined,
+    mode: AIModeOption,
     @SlashOption({
       name: "file",
       description: "Attach a text file to provide context",
@@ -88,104 +201,52 @@ export class AICommands {
     const channelId = interaction.channelId;
     const userId = interaction.user.id;
 
-    // Check rate limit with new system
-    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
-    if (!rateLimitResult.allowed) {
-      await interaction.reply({
-        content: rateLimitResult.message ?? "Rate limited. Please wait.",
-        ephemeral: true,
-      });
-      return;
-    }
+    // Check rate limit
+    const rateLimitCheck = await this.checkAndHandleRateLimit(interaction, userId, channelId, isDM);
+    if (!rateLimitCheck.allowed || !rateLimitCheck.result) return;
+    const rateLimitResult = rateLimitCheck.result;
 
-    // Validate prompt security
-    const validation = validatePrompt(question);
-    if (validation.blocked) {
-      await interaction.reply({
-        content: `❌ ${validation.reason ?? "Invalid question"}`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    // Sanitize input (remove PII)
-    const sanitized = sanitizeInput(question);
+    // Validate and sanitize input
+    const inputCheck = await this.validateAndSanitizeInput(interaction, question);
+    if (!inputCheck.valid || !inputCheck.sanitized) return;
+    const sanitized = inputCheck.sanitized;
 
     await interaction.deferReply();
-
-    // Record the request
     this.rateLimiter.recordRequest(userId, channelId, isDM);
 
-    const temperature = mode === "creative" ? 0.9 : mode === "precise" ? 0.3 : 0.7;
+    const temperature = this.getTemperatureForMode(mode);
 
     try {
-      // Get memory context for personalization
       const memoryContext = await this.memoryManager.buildFullContext(userId, sanitized.text);
+      const systemPrompt = `You are a helpful Discord bot assistant. Be concise and friendly.\n\n${memoryContext}`;
 
-      const systemPrompt = `You are a helpful Discord bot assistant. Be concise and friendly.
-
-${memoryContext}`;
-
-      // Handle file attachment for RAG context
-      let contextText = "";
-      if (file) {
-        const fileContext = await this.processFileAttachment(file);
-        if (fileContext.success) {
-          contextText = `\n\n## Attached Document Context:\n${fileContext.text}`;
-        } else if (fileContext.error) {
-          // Warn but continue
-          log.warn(`File processing failed: ${fileContext.error}`);
-        }
-      }
+      // Process file attachment if provided
+      const contextText = await this.getFileContextText(file);
 
       // Combine question with file context
       const fullQuestion = contextText
         ? `${sanitized.text}\n\n[User attached a file with the following content:]\n${contextText}`
         : sanitized.text;
 
-      const response = await this.aiService.chat(fullQuestion, {
-        temperature,
-        systemPrompt,
-      });
+      const response = await this.aiService.chat(fullQuestion, { temperature, systemPrompt });
 
-      // Store memory from conversation (async, don't wait)
+      // Store memory asynchronously
       this.memoryManager.addMemory(userId, `User asked: ${sanitized.text}`).catch(() => {});
 
-      // Build footer with rate limit info
       const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);
-
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.primary)
-        .setTitle("🤖 AI Response")
-        .setDescription(response.slice(0, 4000))
-        .setFooter({
-          text: `${rateLimitFooter} | Mode: ${mode ?? "balanced"}`,
-        })
-        .setTimestamp();
-
-      // Add rate limit warning if applicable
-      if (rateLimitResult.isWarning && rateLimitResult.message) {
-        embed.addFields({
-          name: "⚠️ Notice",
-          value: rateLimitResult.message,
-        });
-      }
-
-      // Note if file was processed
-      if (file && contextText) {
-        embed.addFields({
-          name: "📎 Attached Context",
-          value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)`,
-          inline: true,
-        });
-      }
+      const embed = this.buildResponseEmbed(
+        response,
+        mode,
+        rateLimitFooter,
+        rateLimitResult,
+        file,
+        contextText
+      );
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      await interaction.editReply({
-        content: `❌ Failed to get AI response: ${errorMessage}`,
-      });
+      await interaction.editReply({ content: `❌ Failed to get AI response: ${errorMessage}` });
     }
   }
 
@@ -339,7 +400,10 @@ ${memoryContext}`;
    */
   private getExtension(filename: string): string {
     const lastDot = filename.lastIndexOf(".");
-    return lastDot !== -1 ? filename.slice(lastDot).toLowerCase() : "";
+    if (lastDot === -1) {
+      return "";
+    }
+    return filename.slice(lastDot).toLowerCase();
   }
 
   @Slash({

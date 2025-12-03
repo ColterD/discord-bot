@@ -233,7 +233,9 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
 
-bootstrap().catch((error) => {
+try {
+  await bootstrap();
+} catch (error) {
   log.error("Failed to start bot", error instanceof Error ? error : undefined);
   process.exit(1);
-});
+}

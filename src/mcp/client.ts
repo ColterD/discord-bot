@@ -221,13 +221,9 @@ export class McpClientManager {
    * Get all available tools across all connected servers
    */
   getAllTools(): McpTool[] {
-    const tools: McpTool[] = [];
-    for (const connection of this.connections.values()) {
-      if (connection.connected) {
-        tools.push(...connection.tools);
-      }
-    }
-    return tools;
+    return Array.from(this.connections.values())
+      .filter((connection) => connection.connected)
+      .flatMap((connection) => connection.tools);
   }
 
   /**

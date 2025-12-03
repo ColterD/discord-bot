@@ -7,7 +7,7 @@
  * - Set HEALTHCHECK_EXTENDED=true to check Ollama, Valkey, etc.
  */
 
-import * as net from "net";
+import * as net from "node:net";
 
 interface HealthStatus {
   status: "healthy" | "degraded" | "unhealthy";
@@ -60,7 +60,7 @@ async function checkValkey(): Promise<boolean> {
         resolve(false);
       });
 
-      socket.connect({ port: parseInt(port!, 10), host });
+      socket.connect({ port: Number.parseInt(port!, 10), host });
     });
   } catch {
     return false;
@@ -101,7 +101,9 @@ async function runHealthcheck(): Promise<void> {
   process.exit(status.status === "unhealthy" ? 1 : 0);
 }
 
-runHealthcheck().catch((error) => {
+try {
+  await runHealthcheck();
+} catch (error) {
   console.error("Healthcheck failed:", error);
   process.exit(1);
-});
+}

@@ -3,30 +3,11 @@
  * These tools can be called by the AI agent to perform actions
  */
 
-export interface Tool {
-  name: string;
-  description: string;
-  parameters: ToolParameter[];
-}
+// Re-export shared types
+export { type Tool, type ToolParameter, type ToolCall, type ToolResult } from "./shared/types.js";
+export { parseToolCall, formatError } from "./shared/utils.js";
 
-export interface ToolParameter {
-  name: string;
-  type: "string" | "number" | "boolean" | "array";
-  description: string;
-  required: boolean;
-  enum?: string[];
-}
-
-export interface ToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
-}
-
-export interface ToolResult {
-  success: boolean;
-  result?: string;
-  error?: string;
-}
+import type { Tool } from "./shared/types.js";
 
 /**
  * Available tools for the agent
@@ -234,40 +215,6 @@ export function formatToolsForPrompt(): string {
   output += "- Always provide a final answer to the user after using tools\n";
 
   return output;
-}
-
-/**
- * Parse tool call from LLM response
- */
-export function parseToolCall(response: string): ToolCall | null {
-  // Look for JSON blocks in various formats
-  const patterns = [
-    /```json\s*\n?([\s\S]*?)\n?```/i,
-    /```\s*\n?([\s\S]*?)\n?```/,
-    /\{[\s\S]*?"tool"[\s\S]*?\}/,
-  ];
-
-  for (const pattern of patterns) {
-    const match = pattern.exec(response);
-    if (match) {
-      try {
-        const jsonStr = match[1] || match[0];
-        const parsed = JSON.parse(jsonStr.trim());
-
-        if (parsed.tool && typeof parsed.tool === "string") {
-          return {
-            name: parsed.tool,
-            arguments: parsed.arguments || {},
-          };
-        }
-      } catch {
-        // Try next pattern
-        continue;
-      }
-    }
-  }
-
-  return null;
 }
 
 /**

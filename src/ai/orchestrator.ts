@@ -8,8 +8,6 @@
  */
 
 import type { GuildMember, User } from "discord.js";
-import { evaluate } from "mathjs";
-import axios from "axios";
 import { type AIService, getAIService } from "./service.js";
 import { getMemoryManager } from "./memory/index.js";
 import { conversationStore, type ConversationMessage } from "./memory/conversation-store.js";
@@ -18,9 +16,19 @@ import { mcpManager, type McpTool } from "../mcp/index.js";
 import { detectImpersonation, type ThreatDetail } from "../security/index.js";
 import { checkToolAccess, filterToolsForUser } from "../security/tool-permissions.js";
 import { createLogger } from "../utils/logger.js";
-import { stripHtmlTags, buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
+import { buildSecureSystemPrompt, validateLLMOutput } from "../utils/security.js";
 import { executeImageGenerationTool } from "./image-service.js";
 import { config } from "../config.js";
+import {
+  type ToolCall,
+  type ToolResult,
+  parseToolCall as sharedParseToolCall,
+  toolGetTime as sharedToolGetTime,
+  toolCalculate as sharedToolCalculate,
+  toolWebSearch as sharedToolWebSearch,
+  toolFetchUrl as sharedToolFetchUrl,
+  TOOL_TIMEOUT_MS,
+} from "./shared/index.js";
 
 const log = createLogger("Orchestrator");
 
@@ -31,25 +39,6 @@ interface OrchestratorMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
   name?: string; // Tool name if role is "tool"
-}
-
-/**
- * Tool call parsed from LLM response
- */
-interface ToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
-}
-
-/**
- * Result from executing a tool
- */
-interface ToolResult {
-  success: boolean;
-  result?: string | undefined;
-  error?: string | undefined;
-  imageBuffer?: Buffer | undefined;
-  filename?: string | undefined;
 }
 
 /**
@@ -98,7 +87,6 @@ interface OrchestratorResponse {
 
 // Maximum iterations to prevent infinite loops
 const DEFAULT_MAX_ITERATIONS = 8;
-const TOOL_TIMEOUT_MS = 30000;
 
 /**
  * Main AI Orchestrator class
@@ -496,32 +484,7 @@ ${memoryContext || "No previous context available."}
    * Parse tool call from LLM response
    */
   private parseToolCall(response: string): ToolCall | null {
-    const patterns = [
-      /```json\s*\n?([\s\S]*?)\n?```/i,
-      /```\s*\n?([\s\S]*?)\n?```/,
-      /\{[\s\S]*?"tool"[\s\S]*?\}/,
-    ];
-
-    for (const pattern of patterns) {
-      const match = pattern.exec(response);
-      if (match) {
-        try {
-          const jsonStr = match[1] ?? match[0];
-          const parsed = JSON.parse(jsonStr.trim()) as Record<string, unknown>;
-
-          if (typeof parsed.tool === "string") {
-            return {
-              name: parsed.tool,
-              arguments: (parsed.arguments as Record<string, unknown>) ?? {},
-            };
-          }
-        } catch {
-          continue;
-        }
-      }
-    }
-
-    return null;
+    return sharedParseToolCall(response);
   }
 
   /**
@@ -593,44 +556,17 @@ ${memoryContext || "No previous context available."}
   }
 
   /**
-   * Get current time tool
+   * Get current time tool - delegates to shared implementation
    */
   private toolGetTime(timezone?: string): ToolResult {
-    try {
-      const tz = timezone ?? "UTC";
-      const now = new Date();
-      const formatted = now.toLocaleString("en-US", {
-        timeZone: tz,
-        weekday: "long",
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        timeZoneName: "short",
-      });
-      return { success: true, result: `Current time in ${tz}: ${formatted}` };
-    } catch {
-      return { success: false, error: "Invalid timezone" };
-    }
+    return sharedToolGetTime(timezone);
   }
 
   /**
-   * Calculate expression tool
+   * Calculate expression tool - delegates to shared implementation
    */
   private toolCalculate(expression: string): ToolResult {
-    try {
-      const result = evaluate(expression);
-      return { success: true, result: `${expression} = ${String(result)}` };
-    } catch (error) {
-      return {
-        success: false,
-        error: `Calculation error: ${
-          error instanceof Error ? error.message : "Invalid expression"
-        }`,
-      };
-    }
+    return sharedToolCalculate(expression);
   }
 
   /**
@@ -697,78 +633,17 @@ ${memoryContext || "No previous context available."}
   }
 
   /**
-   * Web search tool
+   * Web search tool - delegates to shared implementation
    */
   private async toolWebSearch(query: string): Promise<ToolResult> {
-    try {
-      const response = await axios.get("https://api.duckduckgo.com/", {
-        params: { q: query, format: "json", no_html: 1 },
-        timeout: TOOL_TIMEOUT_MS,
-      });
-
-      const data = response.data as {
-        AbstractText?: string;
-        RelatedTopics?: { Text?: string }[];
-      };
-
-      let result = "";
-      if (data.AbstractText) {
-        result += `Summary: ${data.AbstractText}\n`;
-      }
-      if (data.RelatedTopics?.length) {
-        result += "\nRelated:\n";
-        for (const topic of data.RelatedTopics.slice(0, 5)) {
-          if (topic.Text) result += `- ${topic.Text}\n`;
-        }
-      }
-
-      return { success: true, result: result || "No results found." };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Search failed",
-      };
-    }
+    return sharedToolWebSearch(query);
   }
 
   /**
-   * Fetch URL tool
+   * Fetch URL tool - delegates to shared implementation
    */
   private async toolFetchUrl(url: string): Promise<ToolResult> {
-    // Validate URL
-    const ALLOWED_HOSTS = new Set([
-      "en.wikipedia.org",
-      "www.wikipedia.org",
-      "github.com",
-      "docs.python.org",
-      "developer.mozilla.org",
-    ]);
-
-    try {
-      const parsed = new URL(url);
-      if (!ALLOWED_HOSTS.has(parsed.hostname)) {
-        return { success: false, error: "URL hostname not in allowlist" };
-      }
-
-      const response = await axios.get(url, {
-        timeout: TOOL_TIMEOUT_MS,
-        headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot)" },
-        maxRedirects: 3,
-      });
-
-      // Safe HTML stripping using shared utility
-      let content = response.data as string;
-      if (typeof content === "string") {
-        content = stripHtmlTags(content, 4000);
-      }
-
-      return { success: true, result: content };
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Fetch failed",
-      };
-    }
+    return sharedToolFetchUrl(url);
   }
 
   /**

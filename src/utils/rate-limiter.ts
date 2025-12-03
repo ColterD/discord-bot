@@ -75,7 +75,7 @@ const CONFIG = {
  * Uses LRU eviction to bound memory usage
  */
 export class RateLimiter {
-  private cooldowns = new Map<string, CooldownEntry>();
+  private readonly cooldowns = new Map<string, CooldownEntry>();
 
   /**
    * Get the current number of tracked entries
@@ -107,15 +107,70 @@ export class RateLimiter {
     const key = isDM ? `dm-${userId}` : `channel-${channelId}-${userId}`;
     const entry = this.cooldowns.get(key);
 
-    if (!entry) return 0;
+    if (entry) {
+      // Update LRU access time
+      entry.lastAccess = Date.now();
 
-    // Update LRU access time
-    entry.lastAccess = Date.now();
+      const elapsed = Date.now() - entry.lastRequest;
+      const remaining = entry.cooldownMs - elapsed;
 
-    const elapsed = Date.now() - entry.lastRequest;
-    const remaining = entry.cooldownMs - elapsed;
+      return Math.max(remaining, 0);
+    }
+    return 0;
+  }
 
-    return remaining > 0 ? remaining : 0;
+  /**
+   * Create a new cooldown entry with default values
+   */
+  private createEntry(isDM: boolean, now: number): CooldownEntry {
+    return {
+      lastRequest: 0,
+      cooldownMs: isDM ? CONFIG.dmCooldownMs : CONFIG.channelCooldownMs,
+      requestCount: 0,
+      windowStart: now,
+      violations: 0,
+      lastViolation: 0,
+      lastAccess: now,
+    };
+  }
+
+  /**
+   * Get or create entry for a key
+   */
+  private getOrCreateEntry(key: string, isDM: boolean, now: number): CooldownEntry {
+    const existingEntry = this.cooldowns.get(key);
+    if (existingEntry) {
+      existingEntry.lastAccess = now;
+      return existingEntry;
+    }
+
+    const newEntry = this.createEntry(isDM, now);
+    this.cooldowns.set(key, newEntry);
+    this.evictLRU();
+    return newEntry;
+  }
+
+  /**
+   * Calculate backoff and check if in backoff period
+   */
+  private checkBackoffPeriod(
+    entry: CooldownEntry,
+    now: number
+  ): { inBackoff: boolean; backoffMs: number; remaining?: number } {
+    if (!CONFIG.backoffEnabled || entry.violations === 0) {
+      return { inBackoff: false, backoffMs: 0 };
+    }
+
+    const backoffMs = Math.min(
+      CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
+      CONFIG.backoffMaxMs
+    );
+
+    if (now - entry.lastViolation < backoffMs) {
+      return { inBackoff: true, backoffMs, remaining: backoffMs - (now - entry.lastViolation) };
+    }
+
+    return { inBackoff: false, backoffMs };
   }
 
   /**
@@ -125,24 +180,7 @@ export class RateLimiter {
   checkRateLimit(userId: string, channelId: string, isDM: boolean): RateLimitResult {
     const key = isDM ? `dm-${userId}` : `channel-${channelId}-${userId}`;
     const now = Date.now();
-    let entry = this.cooldowns.get(key);
-
-    // Initialize entry if not exists
-    if (!entry) {
-      entry = {
-        lastRequest: 0,
-        cooldownMs: isDM ? CONFIG.dmCooldownMs : CONFIG.channelCooldownMs,
-        requestCount: 0,
-        windowStart: now,
-        violations: 0,
-        lastViolation: 0,
-        lastAccess: now,
-      };
-      this.cooldowns.set(key, entry);
-      this.evictLRU(); // Check if eviction needed
-    } else {
-      entry.lastAccess = now; // Update LRU access time
-    }
+    const entry = this.getOrCreateEntry(key, isDM, now);
 
     // Reset window if expired
     if (now - entry.windowStart > CONFIG.windowMs) {
@@ -155,41 +193,45 @@ export class RateLimiter {
       entry.violations = Math.max(0, entry.violations - 1);
     }
 
-    // Calculate backoff if applicable
-    let backoffMs = 0;
-    if (CONFIG.backoffEnabled && entry.violations > 0) {
-      backoffMs = Math.min(
-        CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
-        CONFIG.backoffMaxMs
-      );
-
-      // Check if still in backoff period
-      if (now - entry.lastViolation < backoffMs) {
-        const remaining = backoffMs - (now - entry.lastViolation);
-        return {
-          allowed: false,
-          remaining: 0,
-          resetIn: remaining,
-          isWarning: false,
-          message: `⏳ You're going too fast! Please wait ${formatCooldown(
-            remaining
-          )} before trying again.`,
-          backoffMs,
-        };
-      }
+    // Check backoff period
+    const backoffCheck = this.checkBackoffPeriod(entry, now);
+    if (backoffCheck.inBackoff && backoffCheck.remaining) {
+      return {
+        allowed: false,
+        remaining: 0,
+        resetIn: backoffCheck.remaining,
+        isWarning: false,
+        message: `⏳ You're going too fast! Please wait ${formatCooldown(
+          backoffCheck.remaining
+        )} before trying again.`,
+        backoffMs: backoffCheck.backoffMs,
+      };
     }
 
-    // Check request count against limits
+    return this.evaluateRateLimit(entry, now, isDM);
+  }
+
+  /**
+   * Evaluate rate limit status and return result
+   */
+  private evaluateRateLimit(entry: CooldownEntry, now: number, isDM: boolean): RateLimitResult {
     const requestsUsed = entry.requestCount;
     const remaining = CONFIG.maxRequests - requestsUsed;
     const softLimit = Math.floor(CONFIG.maxRequests * CONFIG.softLimitThreshold);
+    const resetIn = CONFIG.windowMs - (now - entry.windowStart);
 
     // Hard limit reached
     if (requestsUsed >= CONFIG.maxRequests) {
       entry.violations++;
       entry.lastViolation = now;
 
-      const resetIn = CONFIG.windowMs - (now - entry.windowStart);
+      const backoffMs = CONFIG.backoffEnabled
+        ? Math.min(
+            CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
+            CONFIG.backoffMaxMs
+          )
+        : 0;
+
       return {
         allowed: false,
         remaining: 0,
@@ -197,13 +239,8 @@ export class RateLimiter {
         isWarning: false,
         message: `🛑 Rate limit reached! Please wait ${formatCooldown(
           resetIn
-        )}. (${entry.violations} violation${entry.violations > 1 ? "s" : ""})`,
-        backoffMs: CONFIG.backoffEnabled
-          ? Math.min(
-              CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, entry.violations - 1),
-              CONFIG.backoffMaxMs
-            )
-          : 0,
+        )}. (${entry.violations} violation${entry.violations === 1 ? "" : "s"})`,
+        backoffMs,
       };
     }
 
@@ -212,10 +249,10 @@ export class RateLimiter {
       return {
         allowed: true,
         remaining: remaining - 1,
-        resetIn: CONFIG.windowMs - (now - entry.windowStart),
+        resetIn,
         isWarning: true,
         message: `⚠️ You're going a bit fast... ${remaining - 1} request${
-          remaining - 1 !== 1 ? "s" : ""
+          remaining - 1 === 1 ? "" : "s"
         } remaining.`,
         backoffMs: 0,
       };
@@ -225,7 +262,7 @@ export class RateLimiter {
     return {
       allowed: true,
       remaining: remaining - 1,
-      resetIn: CONFIG.windowMs - (now - entry.windowStart),
+      resetIn,
       isWarning: false,
       message: null,
       backoffMs: 0,
@@ -240,31 +277,17 @@ export class RateLimiter {
     const cooldownMs = isDM ? CONFIG.dmCooldownMs : CONFIG.channelCooldownMs;
     const now = Date.now();
 
-    let entry = this.cooldowns.get(key);
-    if (!entry) {
-      entry = {
-        lastRequest: now,
-        cooldownMs,
-        requestCount: 1,
-        windowStart: now,
-        violations: 0,
-        lastViolation: 0,
-        lastAccess: now,
-      };
-      this.cooldowns.set(key, entry);
-      this.evictLRU(); // Check if eviction needed
-    } else {
-      // Reset window if expired
-      if (now - entry.windowStart > CONFIG.windowMs) {
-        entry.windowStart = now;
-        entry.requestCount = 0;
-      }
+    const entry = this.getOrCreateEntry(key, isDM, now);
 
-      entry.lastRequest = now;
-      entry.cooldownMs = cooldownMs;
-      entry.requestCount++;
-      entry.lastAccess = now;
+    // Reset window if expired
+    if (now - entry.windowStart > CONFIG.windowMs) {
+      entry.windowStart = now;
+      entry.requestCount = 0;
     }
+
+    entry.lastRequest = now;
+    entry.cooldownMs = cooldownMs;
+    entry.requestCount++;
   }
 
   /**
@@ -284,31 +307,28 @@ export class RateLimiter {
     const entry = this.cooldowns.get(key);
     const now = Date.now();
 
-    if (!entry) {
-      return {
-        remaining: CONFIG.maxRequests,
-        total: CONFIG.maxRequests,
-        resetIn: CONFIG.windowMs,
-        violations: 0,
-      };
-    }
+    const defaultStats = {
+      remaining: CONFIG.maxRequests,
+      total: CONFIG.maxRequests,
+      resetIn: CONFIG.windowMs,
+      violations: 0,
+    };
 
-    // Check if window expired
-    if (now - entry.windowStart > CONFIG.windowMs) {
+    if (entry) {
+      // Check if window expired
+      if (now - entry.windowStart > CONFIG.windowMs) {
+        return { ...defaultStats, violations: entry.violations };
+      }
+
       return {
-        remaining: CONFIG.maxRequests,
+        remaining: Math.max(0, CONFIG.maxRequests - entry.requestCount),
         total: CONFIG.maxRequests,
-        resetIn: CONFIG.windowMs,
+        resetIn: CONFIG.windowMs - (now - entry.windowStart),
         violations: entry.violations,
       };
     }
 
-    return {
-      remaining: Math.max(0, CONFIG.maxRequests - entry.requestCount),
-      total: CONFIG.maxRequests,
-      resetIn: CONFIG.windowMs - (now - entry.windowStart),
-      violations: entry.violations,
-    };
+    return defaultStats;
   }
 
   /**
@@ -332,7 +352,7 @@ export class RateLimiter {
  * Channel Queue - manages concurrent requests per channel
  */
 export class ChannelQueue {
-  private channels = new Map<string, ChannelState>();
+  private readonly channels = new Map<string, ChannelState>();
 
   /**
    * Get or create channel state
@@ -470,16 +490,12 @@ let rateLimiter: RateLimiter | null = null;
 let channelQueue: ChannelQueue | null = null;
 
 export function getRateLimiter(): RateLimiter {
-  if (!rateLimiter) {
-    rateLimiter = new RateLimiter();
-  }
+  rateLimiter ??= new RateLimiter();
   return rateLimiter;
 }
 
 export function getChannelQueue(): ChannelQueue {
-  if (!channelQueue) {
-    channelQueue = new ChannelQueue();
-  }
+  channelQueue ??= new ChannelQueue();
   return channelQueue;
 }
 
@@ -490,9 +506,9 @@ export function formatCooldown(ms: number): string {
   const seconds = Math.ceil(ms / 1000);
   if (seconds >= 60) {
     const minutes = Math.ceil(seconds / 60);
-    return `${minutes} minute${minutes !== 1 ? "s" : ""}`;
+    return `${minutes} minute${minutes === 1 ? "" : "s"}`;
   }
-  return `${seconds} second${seconds !== 1 ? "s" : ""}`;
+  return `${seconds} second${seconds === 1 ? "" : "s"}`;
 }
 
 /**

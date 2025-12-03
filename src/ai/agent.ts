@@ -3,14 +3,14 @@ import dns from "node:dns/promises";
 import net from "node:net";
 import { XMLParser } from "fast-xml-parser";
 import { evaluate } from "mathjs";
+import { AGENT_TOOLS, formatToolsForPrompt, parseToolCall, isValidTool } from "./tools.js";
 import {
   type ToolCall,
   type ToolResult,
-  AGENT_TOOLS,
-  formatToolsForPrompt,
-  parseToolCall,
-  isValidTool,
-} from "./tools.js";
+  MAX_AGENT_ITERATIONS,
+  TOOL_TIMEOUT_MS,
+  ALLOWED_FETCH_HOSTNAMES,
+} from "./shared/index.js";
 import { type AIService, getAIService } from "./service.js";
 import { logger } from "../utils/logger.js";
 import { stripHtmlTags } from "../utils/security.js";
@@ -35,23 +35,6 @@ interface AgentResponse {
   iterations: number;
   thinking?: string[] | undefined;
 }
-
-const MAX_ITERATIONS = 8;
-const TOOL_TIMEOUT = 30000;
-
-// Allowlist of safe URL hostnames for fetch_url tool
-const ALLOWED_FETCH_HOSTNAMES = new Set([
-  "en.wikipedia.org",
-  "www.wikipedia.org",
-  "arxiv.org",
-  "export.arxiv.org",
-  "api.duckduckgo.com",
-  "github.com",
-  "raw.githubusercontent.com",
-  "docs.python.org",
-  "developer.mozilla.org",
-  "stackoverflow.com",
-]);
 
 /**
  * Agent Service - Orchestrates tool-calling with the LLM
@@ -147,7 +130,7 @@ export class AgentService {
     const { context, systemPrompt } = await this.initializeContext(query, userId);
     const thinking: string[] = [];
 
-    while (context.iterations < MAX_ITERATIONS) {
+    while (context.iterations < MAX_AGENT_ITERATIONS) {
       context.iterations++;
 
       const prompt = this.buildPrompt(context);
@@ -345,7 +328,7 @@ Do not include raw JSON tool-calls in your final response.`;
           no_html: 1,
           skip_disambig: 1,
         },
-        timeout: TOOL_TIMEOUT,
+        timeout: TOOL_TIMEOUT_MS,
       });
 
       const data = response.data as {
@@ -530,7 +513,7 @@ Do not include raw JSON tool-calls in your final response.`;
       }
 
       const response = await axios.get(url.trim(), {
-        timeout: TOOL_TIMEOUT,
+        timeout: TOOL_TIMEOUT_MS,
         headers: { "User-Agent": "Mozilla/5.0 (compatible; DiscordBot/1.0)" },
         maxRedirects: 0,
         maxContentLength: 100 * 1024,
@@ -604,7 +587,7 @@ Do not include raw JSON tool-calls in your final response.`;
           sortBy: "relevance",
           sortOrder: "descending",
         },
-        timeout: TOOL_TIMEOUT,
+        timeout: TOOL_TIMEOUT_MS,
       });
 
       const xml = response.data as string;
@@ -763,7 +746,7 @@ Do not include raw JSON tool-calls in your final response.`;
       const response = await axios.get(
         `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(trimmedTopic)}`,
         {
-          timeout: TOOL_TIMEOUT,
+          timeout: TOOL_TIMEOUT_MS,
           headers: {
             "User-Agent": "DiscordBot/1.0",
           },

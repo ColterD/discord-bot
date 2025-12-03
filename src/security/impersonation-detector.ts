@@ -55,9 +55,9 @@ function levenshteinDistance(str1: string, str2: string): number {
   const n = str2.length;
 
   // Create distance matrix
-  const dp: number[][] = Array(m + 1)
+  const dp: number[][] = new Array(m + 1)
     .fill(null)
-    .map(() => Array(n + 1).fill(0) as number[]);
+    .map(() => new Array(n + 1).fill(0) as number[]);
 
   // Initialize first row and column
   for (let i = 0; i <= m; i++) dp[i]![0] = i;
@@ -85,8 +85,8 @@ function stringSimilarity(str1: string, str2: string): number {
   const s1 = str1.toLowerCase().trim();
   const s2 = str2.toLowerCase().trim();
 
-  if (s1 === s2) return 1.0;
-  if (s1.length === 0 || s2.length === 0) return 0.0;
+  if (s1 === s2) return 1;
+  if (s1.length === 0 || s2.length === 0) return 0;
 
   const distance = levenshteinDistance(s1, s2);
   const maxLength = Math.max(s1.length, s2.length);
@@ -102,7 +102,7 @@ function detectPatterns(content: string): ThreatDetail[] {
   const patterns = config.security.impersonation.suspiciousPatterns;
 
   for (const pattern of patterns) {
-    const match = content.match(pattern);
+    const match = pattern.exec(content);
     if (match) {
       threats.push({
         type: "pattern",
@@ -149,51 +149,83 @@ function getSeverityFromPattern(pattern: RegExp): ThreatDetail["severity"] {
 }
 
 /**
+ * Check a single name against a protected name and return threat if similar
+ */
+function checkNameAgainstProtected(
+  name: string,
+  protectedName: string,
+  threshold: number,
+  nameType: "Display name" | "Username"
+): ThreatDetail | null {
+  const similarity = stringSimilarity(name, protectedName);
+  if (similarity >= threshold) {
+    return {
+      type: "name_similarity",
+      description: `${nameType} similar to protected name "${protectedName}"`,
+      matched: name,
+      severity: similarity >= 0.9 ? "critical" : "high",
+    };
+  }
+  return null;
+}
+
+/**
+ * Check for homoglyph attacks against protected names
+ */
+function checkHomoglyphAttack(
+  displayName: string,
+  normalizedDisplay: string,
+  threshold: number
+): ThreatDetail | null {
+  if (normalizedDisplay === displayName.toLowerCase()) {
+    return null;
+  }
+
+  const isHomoglyphMatch = PROTECTED_NAMES.some(
+    (protectedName) => stringSimilarity(normalizedDisplay, protectedName) >= threshold
+  );
+
+  if (isHomoglyphMatch) {
+    return {
+      type: "name_similarity",
+      description: "Unicode homoglyph attack detected",
+      matched: displayName,
+      severity: "critical",
+    };
+  }
+  return null;
+}
+
+/**
  * Layer 2: Name similarity detection
  */
 function detectNameSimilarity(displayName: string, username: string): ThreatDetail[] {
-  const threats: ThreatDetail[] = [];
   const threshold = config.security.impersonation.similarityThreshold;
+  const threats: ThreatDetail[] = [];
 
-  // Check against protected names
+  // Check display name and username against all protected names
   for (const protectedName of PROTECTED_NAMES) {
-    const displaySimilarity = stringSimilarity(displayName, protectedName);
-    const usernameSimilarity = stringSimilarity(username, protectedName);
+    const displayThreat = checkNameAgainstProtected(
+      displayName,
+      protectedName,
+      threshold,
+      "Display name"
+    );
+    if (displayThreat) threats.push(displayThreat);
 
-    if (displaySimilarity >= threshold) {
-      threats.push({
-        type: "name_similarity",
-        description: `Display name similar to protected name "${protectedName}"`,
-        matched: displayName,
-        severity: displaySimilarity >= 0.9 ? "critical" : "high",
-      });
-    }
-
-    if (usernameSimilarity >= threshold) {
-      threats.push({
-        type: "name_similarity",
-        description: `Username similar to protected name "${protectedName}"`,
-        matched: username,
-        severity: usernameSimilarity >= 0.9 ? "critical" : "high",
-      });
-    }
+    const usernameThreat = checkNameAgainstProtected(
+      username,
+      protectedName,
+      threshold,
+      "Username"
+    );
+    if (usernameThreat) threats.push(usernameThreat);
   }
 
   // Check for unicode homoglyphs (lookalike characters)
   const normalizedDisplay = normalizeHomoglyphs(displayName);
-  if (normalizedDisplay !== displayName.toLowerCase()) {
-    for (const protectedName of PROTECTED_NAMES) {
-      if (stringSimilarity(normalizedDisplay, protectedName) >= threshold) {
-        threats.push({
-          type: "name_similarity",
-          description: "Unicode homoglyph attack detected",
-          matched: displayName,
-          severity: "critical",
-        });
-        break;
-      }
-    }
-  }
+  const homoglyphThreat = checkHomoglyphAttack(displayName, normalizedDisplay, threshold);
+  if (homoglyphThreat) threats.push(homoglyphThreat);
 
   return threats;
 }
@@ -246,7 +278,7 @@ function sanitizeContent(content: string): string {
   }
 
   // Remove zero-width characters
-  sanitized = sanitized.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  sanitized = sanitized.replaceAll(/[\u200B-\u200D\uFEFF]/g, "");
 
   return sanitized;
 }
@@ -267,13 +299,11 @@ export function detectImpersonation(
     };
   }
 
-  const threats: ThreatDetail[] = [];
-
-  // Layer 1: Pattern detection
-  threats.push(...detectPatterns(content));
-
-  // Layer 2: Name similarity
-  threats.push(...detectNameSimilarity(displayName, username));
+  // Combine results from all detection layers
+  const threats: ThreatDetail[] = [
+    ...detectPatterns(content),
+    ...detectNameSimilarity(displayName, username),
+  ];
 
   // Calculate overall confidence
   let confidence = 0;
@@ -282,7 +312,7 @@ export function detectImpersonation(
       low: 0.2,
       medium: 0.4,
       high: 0.7,
-      critical: 1.0,
+      critical: 1,
     };
 
     const maxWeight = Math.max(...threats.map((t) => severityWeights[t.severity]));
@@ -290,7 +320,7 @@ export function detectImpersonation(
       threats.reduce((sum, t) => sum + severityWeights[t.severity], 0) / threats.length;
 
     // Confidence increases with more threats and higher severity
-    confidence = Math.min(0.5 * maxWeight + 0.5 * avgWeight, 1.0);
+    confidence = Math.min(0.5 * maxWeight + 0.5 * avgWeight, 1);
   }
 
   const detected = threats.length > 0 && confidence >= 0.3;

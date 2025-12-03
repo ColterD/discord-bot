@@ -29,7 +29,7 @@ jobs:
 
       - name: Run Semgrep scan
         run: semgrep scan --config auto --sarif --output=semgrep-results.sarif
-        continue-on-error: true  # Don't fail on findings, just upload results
+        continue-on-error: true # Don't fail on findings, just upload results
         env:
           SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
 

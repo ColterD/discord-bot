@@ -81,14 +81,26 @@ export function toolGetTime(timezone?: string): ToolResult {
 }
 
 /**
- * Calculate a mathematical expression safely
+ * Calculate a mathematical expression safely using mathjs
+ *
+ * SECURITY: mathjs evaluate() is safe for mathematical expressions.
+ * Unlike JavaScript eval(), mathjs has no access to JavaScript globals,
+ * filesystem, network, or other dangerous APIs. It only evaluates
+ * mathematical expressions in a sandboxed environment.
+ *
+ * Additional protections:
+ * - Input sanitization removes all non-math characters
+ * - Only alphanumeric, operators, parentheses, and whitespace allowed
+ *
+ * @see https://mathjs.org/docs/expressions/security.html
  */
 export function toolCalculate(expression: string): ToolResult {
   if (!expression?.trim()) {
     return { success: false, error: "No expression provided" };
   }
 
-  // Sanitize expression - allow only math characters
+  // Sanitize expression - allow only math characters (alphanumeric, operators, parens, whitespace)
+  // This prevents any attempt to inject non-mathematical content
   const sanitized = expression.replaceAll(/[^0-9+\-*/().^%\s,a-z]/gi, "");
 
   if (sanitized.length === 0) {
@@ -96,6 +108,7 @@ export function toolCalculate(expression: string): ToolResult {
   }
 
   try {
+    // mathjs evaluate() is sandboxed and cannot execute arbitrary JavaScript
     const result = evaluate(sanitized);
     return { success: true, result: `${expression} = ${result as string}` };
   } catch (error) {
@@ -105,6 +118,12 @@ export function toolCalculate(expression: string): ToolResult {
 
 /**
  * Search the web using DuckDuckGo API
+ *
+ * SECURITY: This performs a GET request to a fixed, trusted API endpoint.
+ * - Destination is hardcoded to api.duckduckgo.com (not user-controlled)
+ * - Only the search query parameter comes from user input
+ * - Query is length-limited to prevent abuse
+ * - Uses safe JSON format with HTML stripping disabled
  */
 export async function toolWebSearch(query: string, maxResults = 5): Promise<ToolResult> {
   if (!query?.trim()) {
@@ -180,6 +199,14 @@ export function isUrlAllowed(url: string): { allowed: boolean; hostname?: string
 
 /**
  * Fetch content from an allowed URL
+ *
+ * SECURITY: Server-Side Request Forgery (SSRF) protection implemented:
+ * - URL validation requires HTTPS protocol only
+ * - Strict domain allowlist (ALLOWED_FETCH_HOSTNAMES) prevents internal network access
+ * - Content length limited to 500KB to prevent denial of service
+ * - Request timeout prevents hanging connections
+ * - Only external, trusted documentation sites are allowed
+ * - All HTML is stripped before returning content
  */
 export async function toolFetchUrl(url: string): Promise<ToolResult> {
   if (!url?.trim()) {

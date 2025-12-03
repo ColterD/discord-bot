@@ -607,17 +607,24 @@ export function stripHtmlTags(html: string, maxLength = 4000): string {
   while (previousContent !== content) {
     previousContent = content;
 
-    // Remove script tags and their content
-    // Matches opening tag, any content, and closing tag with any whitespace/attributes
+    // Remove complete script tags with content
     content = content.replace(/<script\b[^>]*>[\s\S]*?<\/\s*script[^>]*>/gi, "");
 
-    // Remove style tags and their content
-    // Matches opening tag, any content, and closing tag with any whitespace/attributes
+    // Remove complete style tags with content
     content = content.replace(/<style\b[^>]*>[\s\S]*?<\/\s*style[^>]*>/gi, "");
+
+    // Remove orphaned/unclosed script opening tags (safety net)
+    content = content.replace(/<script\b[^>]*>/gi, "");
+
+    // Remove orphaned/unclosed style opening tags (safety net)
+    content = content.replace(/<style\b[^>]*>/gi, "");
 
     // Remove all other HTML tags
     content = content.replace(/<[^>]+>/g, " ");
   }
+
+  // Final safety: remove any remaining < or > that could form partial tags
+  content = content.replace(/[<>]/g, " ");
 
   // Clean up whitespace and limit length
   return content.replace(/\s+/g, " ").trim().slice(0, maxLength);

@@ -92,14 +92,8 @@ export const config = {
   // Memory Configuration (Mem0 + Three-tier architecture)
   memory: {
     // Summarization triggers
-    summarizeAfterMessages: Number.parseInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15",
-      10
-    ),
-    summarizeAfterIdleMs: Number.parseInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000",
-      10
-    ), // 30 minutes
+    summarizeAfterMessages: Number.parseInt(process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES ?? "15", 10),
+    summarizeAfterIdleMs: Number.parseInt(process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS ?? "1800000", 10), // 30 minutes
     // Context window allocation
     maxContextTokens: Number.parseInt(process.env.MEMORY_MAX_CONTEXT_TOKENS ?? "4096", 10),
     // Tier allocation percentages

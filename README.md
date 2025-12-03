@@ -1,5 +1,10 @@
 # Discord Bot
 
+> [!CAUTION]
+> **⚠️ WORK IN PROGRESS - NOT READY FOR PRODUCTION**
+>
+> This project is under active development and is not yet stable. APIs may change without notice, features may be incomplete or broken, and there may be security issues that have not been addressed. Use at your own risk.
+
 A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring local LLM integration via Ollama, ChatGPT-style memory, tool calling, MCP integration, and Docker containerization.
 
 ## Features

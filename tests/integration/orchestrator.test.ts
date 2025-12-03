@@ -232,10 +232,13 @@ test("Security: LLM output validation", async () => {
   assert.equal(cleanResult.issuesFound.length, 0, "Clean output should have no issues");
 
   // Test output containing a Discord token pattern (using obviously fake test token)
-  // Format: Base64(user_id).timestamp.hmac - uses TEST_TOKEN prefix that's clearly invalid
+  // Format: Base64(user_id).timestamp.hmac - uses pattern that's clearly invalid
   // but structurally matches Discord token format for regex testing
-  const tokenLeakOutput =
-    "Here's a token: MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx.G12345._test_token_not_real_do_not_use_";
+  // Uses env var if available, otherwise falls back to hardcoded test pattern
+  const testTokenPattern =
+    process.env.TEST_DISCORD_TOKEN_PATTERN ||
+    "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx.G12345._test_token_not_real_do_not_use_";
+  const tokenLeakOutput = `Here's a token: ${testTokenPattern}`;
   const tokenResult = validateLLMOutput(tokenLeakOutput);
 
   assert.equal(tokenResult.valid, false, "Token leak should fail validation");

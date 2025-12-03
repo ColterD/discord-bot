@@ -53,8 +53,7 @@ export class AgentCommands {
       if (result.toolsUsed.length > 0) {
         footerParts.push(`Tools: ${result.toolsUsed.join(", ")}`);
       }
-      footerParts.push(`Steps: ${result.iterations}`);
-      footerParts.push(`Model: ${config.llm.model.split("/").pop()}`);
+      footerParts.push(`Steps: ${result.iterations}`, `Model: ${config.llm.model.split("/").pop()}`);
       embed.setFooter({ text: footerParts.join(" | ") });
 
       // If verbose mode, add thinking process

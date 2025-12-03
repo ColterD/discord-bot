@@ -90,7 +90,7 @@ function formatUnknownError(error: unknown): string {
  * Supports automatic sleep mode after inactivity
  */
 export class AIService {
-  private client: AxiosInstance;
+  private readonly client: AxiosInstance;
   private model: string;
   private isPreloaded = false;
   private isAsleep = true; // Start asleep, wake on first request or preload
@@ -143,9 +143,15 @@ export class AIService {
     // Fixed delays in milliseconds - no external data influence
     const FIXED_DELAYS = [1000, 2000, 4000] as const;
     // Clamp index to valid range using only constants
-    const safeIndex = retryIndex < 0 ? 0 : retryIndex > 2 ? 2 : Math.floor(retryIndex);
-    // TypeScript needs explicit handling - we know the index is 0, 1, or 2
-    return FIXED_DELAYS[safeIndex as 0 | 1 | 2];
+    let safeIndex: 0 | 1 | 2;
+    if (retryIndex < 0) {
+      safeIndex = 0;
+    } else if (retryIndex > 2) {
+      safeIndex = 2;
+    } else {
+      safeIndex = Math.floor(retryIndex) as 0 | 1 | 2;
+    }
+    return FIXED_DELAYS[safeIndex];
   }
 
   /**
@@ -232,7 +238,7 @@ export class AIService {
           log.error(`Request failed: ${url} - ${errorCode} - ${error.message}`);
         }
 
-        return Promise.reject(error);
+        throw error;
       }
     );
   }
@@ -787,9 +793,7 @@ export class AIService {
 let instance: AIService | null = null;
 
 export function getAIService(): AIService {
-  if (!instance) {
-    instance = new AIService();
-  }
+  instance ??= new AIService();
   return instance;
 }
 

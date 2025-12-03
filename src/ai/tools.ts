@@ -248,7 +248,7 @@ export function parseToolCall(response: string): ToolCall | null {
   ];
 
   for (const pattern of patterns) {
-    const match = response.match(pattern);
+    const match = pattern.exec(response);
     if (match) {
       try {
         const jsonStr = match[1] || match[0];

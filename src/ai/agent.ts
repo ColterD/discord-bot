@@ -104,7 +104,9 @@ export class AgentService {
       const result = await this.executeTool(toolCall);
       context.toolsUsed.push(toolCall.name);
 
-      const toolContent = result.success ? result.result : `Error: ${result.error ?? "Unknown error"}`;
+      const toolContent = result.success
+        ? result.result
+        : `Error: ${result.error ?? "Unknown error"}`;
 
       context.messages.push({
         role: "tool",
@@ -112,7 +114,10 @@ export class AgentService {
         toolResult: result,
       });
     } catch (error) {
-      logger.error("Tool execution failed", error instanceof Error ? error.message : "Unknown error");
+      logger.error(
+        "Tool execution failed",
+        error instanceof Error ? error.message : "Unknown error"
+      );
       context.messages.push({
         role: "tool",
         content: `Error: Tool "${toolCall.name}" execution failed.`,
@@ -277,7 +282,11 @@ Do not include raw JSON tool-calls in your final response.`;
   /**
    * Validate search query input
    */
-  private validateSearchQuery(query: string): { valid: boolean; error?: string; trimmedQuery?: string } {
+  private validateSearchQuery(query: string): {
+    valid: boolean;
+    error?: string;
+    trimmedQuery?: string;
+  } {
     const trimmedQuery = query?.trim() ?? "";
 
     if (!trimmedQuery) {
@@ -486,7 +495,10 @@ Do not include raw JSON tool-calls in your final response.`;
   private async checkSSRF(hostname: string): Promise<{ blocked: boolean; error?: string }> {
     if (net.isIP(hostname)) {
       if (this.isPrivateIp(hostname)) {
-        return { blocked: true, error: "Fetching URLs to private or internal networks is not allowed." };
+        return {
+          blocked: true,
+          error: "Fetching URLs to private or internal networks is not allowed.",
+        };
       }
       return { blocked: false };
     }
@@ -494,7 +506,10 @@ Do not include raw JSON tool-calls in your final response.`;
     try {
       const addresses = await dns.lookup(hostname, { all: true });
       if (addresses.some((addr) => this.isPrivateIp(addr.address))) {
-        return { blocked: true, error: "Fetching URLs to private or internal networks is not allowed." };
+        return {
+          blocked: true,
+          error: "Fetching URLs to private or internal networks is not allowed.",
+        };
       }
       return { blocked: false };
     } catch {

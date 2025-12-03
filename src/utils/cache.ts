@@ -10,6 +10,57 @@ import { createLogger } from "./logger.js";
 const log = createLogger("Cache");
 
 /**
+ * Maximum allowed pattern length to prevent ReDoS attacks
+ * Patterns longer than this are rejected
+ */
+const MAX_PATTERN_LENGTH = 256;
+
+/**
+ * Match a key against a glob pattern using simple string matching
+ * Supports * (match any characters) and ? (match single character)
+ * This avoids dynamic RegExp construction which can be vulnerable to ReDoS
+ */
+function globMatch(pattern: string, key: string): boolean {
+  // Reject excessively long patterns to prevent DoS
+  if (pattern.length > MAX_PATTERN_LENGTH || key.length > MAX_PATTERN_LENGTH * 4) {
+    return false;
+  }
+
+  let pi = 0; // pattern index
+  let ki = 0; // key index
+  let starIdx = -1; // last star position in pattern
+  let matchIdx = -1; // position in key when star was found
+
+  while (ki < key.length) {
+    if (pi < pattern.length && (pattern[pi] === "?" || pattern[pi] === key[ki])) {
+      // Match single character or exact match
+      pi++;
+      ki++;
+    } else if (pi < pattern.length && pattern[pi] === "*") {
+      // Star found, record position for backtracking
+      starIdx = pi;
+      matchIdx = ki;
+      pi++;
+    } else if (starIdx !== -1) {
+      // Mismatch, but we have a star to backtrack to
+      pi = starIdx + 1;
+      matchIdx++;
+      ki = matchIdx;
+    } else {
+      // No match and no star to backtrack
+      return false;
+    }
+  }
+
+  // Check remaining pattern characters (must all be stars)
+  while (pi < pattern.length && pattern[pi] === "*") {
+    pi++;
+  }
+
+  return pi === pattern.length;
+}
+
+/**
  * Cache interface for abstraction
  */
 export interface CacheClient {
@@ -74,8 +125,7 @@ export class InMemoryCache implements CacheClient {
   }
 
   async keys(pattern: string): Promise<string[]> {
-    // Simple pattern matching (supports * wildcard)
-    const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    // Use safe glob matching that avoids dynamic RegExp (ReDoS-safe)
     const matches: string[] = [];
     const now = Date.now();
 
@@ -84,7 +134,7 @@ export class InMemoryCache implements CacheClient {
         this.store.delete(key);
         continue;
       }
-      if (regex.test(key)) {
+      if (globMatch(pattern, key)) {
         matches.push(key);
       }
     }

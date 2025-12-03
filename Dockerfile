@@ -1,5 +1,5 @@
 # Build stage
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 
 WORKDIR /app
 
@@ -18,36 +18,32 @@ COPY src/ ./src/
 # Build TypeScript
 RUN npm run build
 
-# Production stage
-FROM node:20-slim AS production
+# Prune to production dependencies only
+RUN npm ci --omit=dev && npm cache clean --force
+
+# Production stage - distroless for minimal attack surface
+# Uses nonroot user (UID 65532) by default
+FROM gcr.io/distroless/nodejs24-debian12:nonroot
 
 WORKDIR /app
 
-# Create non-root user for security
-RUN groupadd -g 1001 discordbot && \
-    useradd -u 1001 -g discordbot -s /bin/false discordbot
-
-# Copy package files and install production dependencies only
-COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
-
-# Copy built files from builder stage
+# Copy built files and production dependencies from builder
 COPY --from=builder /app/dist ./dist
-
-# Create logs directory
-RUN mkdir -p /app/logs && chown -R discordbot:discordbot /app
-
-# Switch to non-root user
-USER discordbot
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./
 
 # Set environment variables
 ENV NODE_ENV=production
 # Increase Node.js heap size to utilize container memory
 ENV NODE_OPTIONS="--max-old-space-size=384"
 
-# Health check - verify process is responsive
+# Health check using exec form (no shell required in distroless)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
-  CMD node dist/healthcheck.js || exit 1
+  CMD ["/nodejs/bin/node", "dist/healthcheck.js"]
 
-# Start the bot
-CMD ["node", "dist/index.js"]
+# Explicit non-root user (distroless:nonroot uses UID 65532)
+# This satisfies security scanners that require explicit USER directive
+USER nonroot
+
+# Start the bot (distroless uses node as entrypoint)
+CMD ["dist/index.js"]

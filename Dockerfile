@@ -1,5 +1,6 @@
 # Build stage
-FROM node:24-slim AS builder
+# Pin to specific SHA for supply chain security
+FROM node:24-slim@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
 
 WORKDIR /app
 
@@ -23,7 +24,8 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Production stage - distroless for minimal attack surface
 # Uses nonroot user (UID 65532) by default
-FROM gcr.io/distroless/nodejs24-debian12:nonroot
+# Pin to specific SHA for supply chain security
+FROM gcr.io/distroless/nodejs24-debian12:nonroot@sha256:f9d553b602abd9cd8790ffd1259229dd9915bd293402e88339e335465fec76ac
 
 WORKDIR /app
 

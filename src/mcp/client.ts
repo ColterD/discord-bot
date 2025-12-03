@@ -5,7 +5,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { z } from "zod";
+import { z } from "zod/v4";
 import { readFile } from "fs/promises";
 import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
@@ -18,7 +18,7 @@ const log = createLogger("MCP");
 const McpServerConfigSchema = z.object({
   command: z.string(),
   args: z.array(z.string()).optional(),
-  env: z.record(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   description: z.string().optional(),
   metadata: z
     .object({

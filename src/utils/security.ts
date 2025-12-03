@@ -3,6 +3,13 @@
  * Input sanitization and validation for AI prompts
  */
 
+import DOMPurify from "dompurify";
+import { JSDOM } from "jsdom";
+
+// Initialize DOMPurify with jsdom for Node.js environment
+const window = new JSDOM("").window;
+const purify = DOMPurify(window);
+
 // PII patterns to detect and sanitize
 const PII_PATTERNS = [
   // Email addresses
@@ -591,45 +598,25 @@ export function isUrlSafe(url: string): { safe: boolean; reason?: string } {
 }
 
 /**
- * Safely strip HTML tags from content
- * Uses iterative approach to handle nested/malformed tags like <scr<script>ipt>
- * Handles script/style tags with content, including variants like </script >
+ * Safely strip HTML tags from content using DOMPurify
+ * Uses a proper HTML sanitizer to handle nested/malformed tags securely
+ * This replaces the previous regex-based approach which was vulnerable to bypasses
  */
 export function stripHtmlTags(html: string, maxLength = 4000): string {
   if (!html || typeof html !== "string") {
     return "";
   }
 
-  let content = html;
-
-  // First pass: aggressively remove dangerous tags and their content
-  // Use a loop with a reasonable iteration limit to prevent infinite loops
-  for (let i = 0; i < 100; i++) {
-    const before = content;
-
-    // Remove script/style tags with content, plus standalone opening tags
-    content = content
-      .replace(/<script\b[^>]*>[\s\S]*?<\/\s*script[^>]*>/gi, " ")
-      .replace(/<style\b[^>]*>[\s\S]*?<\/\s*style[^>]*>/gi, " ")
-      .replace(/<script\b[^>]*>/gi, " ")
-      .replace(/<style\b[^>]*>/gi, " ");
-
-    if (before === content) break;
-  }
-
-  // Second pass: remove remaining HTML tags
-  for (let i = 0; i < 100; i++) {
-    const before = content;
-    content = content.replace(/<[^>]+>/g, " ");
-    if (before === content) break;
-  }
-
-  // Final defense: completely remove any remaining angle brackets
-  // This guarantees no HTML can remain regardless of malformed input
-  content = content.replace(/</g, " ").replace(/>/g, " ");
+  // Use DOMPurify with no allowed tags to strip all HTML
+  // This properly handles nested tags like <scr<script>ipt> that regex cannot
+  const clean = purify.sanitize(html, {
+    ALLOWED_TAGS: [], // No HTML tags allowed
+    ALLOWED_ATTR: [], // No attributes allowed
+    KEEP_CONTENT: true, // Keep text content
+  });
 
   // Clean up whitespace and limit length
-  return content.replace(/\s+/g, " ").trim().slice(0, maxLength);
+  return clean.replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
 /**

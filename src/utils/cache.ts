@@ -10,6 +10,28 @@ import { createLogger } from "./logger.js";
 const log = createLogger("Cache");
 
 /**
+ * Escape special regex metacharacters in a string
+ * This prevents user-provided patterns from being interpreted as regex
+ */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Convert a glob pattern to a safe regex pattern
+ * Escapes all regex metacharacters first, then converts glob wildcards
+ */
+function globToRegex(pattern: string): RegExp {
+  // First escape all regex special characters
+  const escaped = escapeRegex(pattern);
+  // Then convert escaped glob wildcards back to regex equivalents
+  // \* becomes .* (match any characters)
+  // \? becomes . (match single character)
+  const regexPattern = escaped.replace(/\\\*/g, ".*").replace(/\\\?/g, ".");
+  return new RegExp(`^${regexPattern}$`);
+}
+
+/**
  * Cache interface for abstraction
  */
 export interface CacheClient {
@@ -74,8 +96,8 @@ export class InMemoryCache implements CacheClient {
   }
 
   async keys(pattern: string): Promise<string[]> {
-    // Simple pattern matching (supports * wildcard)
-    const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
+    // Use safe glob-to-regex conversion that escapes metacharacters
+    const regex = globToRegex(pattern);
     const matches: string[] = [];
     const now = Date.now();
 

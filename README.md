@@ -316,6 +316,7 @@ npm run test:all
 ### Test Coverage
 
 **Integration Tests:**
+
 - Tool permissions (4-tier system)
 - Impersonation detection
 - Security utilities
@@ -323,6 +324,7 @@ npm run test:all
 - Cache operations
 
 **Security Tests:**
+
 - Tool request validation (path traversal, command injection, SQL injection)
 - URL safety checks (private IP blocking, protocol validation)
 - Memory isolation (user ID validation)

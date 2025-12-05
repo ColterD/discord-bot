@@ -113,3 +113,7 @@ mcp-servers.json
 
 # Snyk Security Extension - AI Rules (auto-generated)
 .cursor/rules/snyk_rules.mdc
+
+# Agent workspace files
+.agents/
+eslint-output.json

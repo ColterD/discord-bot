@@ -301,7 +301,8 @@ export class ImageService {
       const afterStatus = await this.getVRAMStatus();
 
       if (afterStatus && beforeStatus) {
-        // Handle edge case where VRAM usage increased (other processes)
+        // Handle edge case where VRAM usage increased between measurements
+        // (could be due to other processes, GPU scheduling, or measurement timing)
         const freedBytes = Math.max(0, beforeUsed - afterStatus.used);
         const freedMB = freedBytes / (1024 * 1024);
 
@@ -322,9 +323,10 @@ export class ImageService {
         }
       }
 
-      // Couldn't verify, but endpoint returned OK so assume success
-      log.debug("Could not verify VRAM status, assuming unload succeeded");
-      return true;
+      // Couldn't verify VRAM status - return false to trigger retry
+      // This ensures we don't falsely mark as unloaded when verification fails
+      log.warn("Could not verify VRAM status after /free call, will retry");
+      return false;
     } catch (error) {
       log.warn(
         `Error during model unload: ${error instanceof Error ? error.message : String(error)}`

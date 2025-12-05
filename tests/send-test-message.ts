@@ -70,8 +70,7 @@ function log(
 
 function isRateLimitResponse(response: string): boolean {
   return (
-    response.includes("⏳") &&
-    (response.includes("Please wait") || response.includes("Rate limit"))
+    response.includes("⏳") && (response.includes("Please wait") || response.includes("Rate limit"))
   );
 }
 
@@ -115,7 +114,9 @@ const toolTests: TestCase[] = [
     name: "Time Tool",
     message: "What time is it right now?",
     expectedBehavior: "Bot should use time tool and report current time",
-    validate: withRateLimitCheck((r) => /\d{1,2}:\d{2}/.test(r) || r.toLowerCase().includes("time")),
+    validate: withRateLimitCheck(
+      (r) => /\d{1,2}:\d{2}/.test(r) || r.toLowerCase().includes("time")
+    ),
     delay: 120000,
   },
   {
@@ -202,7 +203,14 @@ async function executeTest(test: TestCase, env: TestEnv): Promise<TestResult> {
 
   if (!messageId) {
     log("error", "Failed to send message");
-    return { name: test.name, sent: false, gotResponse: false, response: null, passed: false, error: "Failed to send message" };
+    return {
+      name: test.name,
+      sent: false,
+      gotResponse: false,
+      response: null,
+      passed: false,
+      error: "Failed to send message",
+    };
   }
 
   log("success", `Message sent (ID: ${messageId})`);
@@ -214,7 +222,14 @@ async function executeTest(test: TestCase, env: TestEnv): Promise<TestResult> {
 
   if (!botResponse) {
     log("error", "No response from bot within timeout");
-    return { name: test.name, sent: true, gotResponse: false, response: null, passed: false, error: `No response within ${maxWait / 1000}s` };
+    return {
+      name: test.name,
+      sent: true,
+      gotResponse: false,
+      response: null,
+      passed: false,
+      error: `No response within ${maxWait / 1000}s`,
+    };
   }
 
   const responseContent = extractResponseContent(botResponse);
@@ -228,7 +243,11 @@ async function executeTest(test: TestCase, env: TestEnv): Promise<TestResult> {
   return { name: test.name, sent: true, gotResponse: true, response: responseContent, passed };
 }
 
-async function runTestSuite(suiteName: string, tests: TestCase[], env: TestEnv): Promise<TestResult[]> {
+async function runTestSuite(
+  suiteName: string,
+  tests: TestCase[],
+  env: TestEnv
+): Promise<TestResult[]> {
   console.log(`\n${colors.cyan}${"=".repeat(60)}${colors.reset}`);
   console.log(`${colors.cyan}📋 Test Suite: ${suiteName}${colors.reset}`);
   console.log(`${colors.cyan}${"=".repeat(60)}${colors.reset}\n`);
@@ -281,7 +300,9 @@ function printSummary(allResults: SuiteResults[]): { failed: number; noResponse:
     totalNoResponse += noResponse;
   }
 
-  console.log(`\n  ${colors.bold}Totals:${colors.reset} ✓ ${totalPassed}, ✗ ${totalFailed}, ⚠ ${totalNoResponse}\n`);
+  console.log(
+    `\n  ${colors.bold}Totals:${colors.reset} ✓ ${totalPassed}, ✗ ${totalFailed}, ⚠ ${totalNoResponse}\n`
+  );
   return { failed: totalFailed, noResponse: totalNoResponse };
 }
 

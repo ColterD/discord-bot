@@ -6,6 +6,18 @@
 
 import "dotenv/config";
 
+// ============ Security Constants ============
+
+/** Discord webhook URL regex pattern - validates the expected format */
+const DISCORD_WEBHOOK_URL_PATTERN =
+  /^https:\/\/(?:discord\.com|discordapp\.com)\/api\/webhooks\/\d{17,19}\/[\w-]{60,68}$/;
+
+/** Discord snowflake ID pattern (17-19 digit number) */
+const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,19}$/;
+
+/** Discord API base URL - only allow official Discord API */
+const DISCORD_API_BASE = "https://discord.com/api/v10";
+
 // ============ Types ============
 
 export interface DiscordMessage {
@@ -93,21 +105,71 @@ export function printEnvStatus(): void {
   console.log(`  TEST_MODE: ${process.env.TEST_MODE ?? "NOT SET"}`);
 }
 
+// ============ Security Validation ============
+
+/**
+ * Validate a Discord webhook URL
+ * @returns true if the URL matches the expected Discord webhook format
+ */
+export function isValidWebhookUrl(url: string): boolean {
+  return DISCORD_WEBHOOK_URL_PATTERN.test(url);
+}
+
+/**
+ * Validate a Discord snowflake ID (channel ID, message ID, user ID)
+ * @returns true if the ID is a valid 17-19 digit snowflake
+ */
+export function isValidSnowflake(id: string): boolean {
+  return DISCORD_SNOWFLAKE_PATTERN.test(id);
+}
+
+/**
+ * Sanitize content for webhook message to prevent injection
+ * Limits length and removes potentially dangerous characters
+ */
+function sanitizeWebhookContent(content: string): string {
+  // Limit content length to Discord's max (2000 chars)
+  const maxLength = 2000;
+  const truncated = content.length > maxLength ? content.substring(0, maxLength) : content;
+  // Remove null bytes and other control characters (0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F)
+  // Build pattern from char codes to avoid embedding literal control characters in source
+  let result = "";
+  for (const char of truncated) {
+    const code = char.codePointAt(0) ?? 0;
+    // Allow tab (0x09), newline (0x0A), carriage return (0x0D), and all chars >= 0x20
+    if (code === 0x09 || code === 0x0a || code === 0x0d || code >= 0x20) {
+      result += char;
+    }
+  }
+  return result;
+}
+
 // ============ Discord API Utilities ============
 
 /**
  * Send a message via Discord webhook
+ * Security: Validates webhook URL format before making request
  */
 export async function sendWebhookMessage(
   webhookUrl: string,
   content: string,
   username = "Test User 🧪"
 ): Promise<string | null> {
+  // Validate webhook URL format to prevent SSRF
+  if (!isValidWebhookUrl(webhookUrl)) {
+    console.error("Invalid webhook URL format - must be a valid Discord webhook URL");
+    return null;
+  }
+
+  // Sanitize content
+  const sanitizedContent = sanitizeWebhookContent(content);
+  const sanitizedUsername = sanitizeWebhookContent(username).substring(0, 80);
+
   try {
     const response = await fetch(`${webhookUrl}?wait=true`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content, username }),
+      body: JSON.stringify({ content: sanitizedContent, username: sanitizedUsername }),
     });
 
     if (!response.ok) {
@@ -126,6 +188,7 @@ export async function sendWebhookMessage(
 
 /**
  * Fetch messages from a Discord channel
+ * Security: Validates channel ID and constructs URL safely
  */
 export async function fetchChannelMessages(
   channelId: string,
@@ -133,13 +196,30 @@ export async function fetchChannelMessages(
   afterMessageId?: string,
   limit = 10
 ): Promise<DiscordMessage[]> {
+  // Validate channel ID is a proper snowflake to prevent injection
+  if (!isValidSnowflake(channelId)) {
+    console.error("Invalid channel ID format - must be a valid Discord snowflake");
+    return [];
+  }
+
+  // Validate afterMessageId if provided
+  if (afterMessageId && !isValidSnowflake(afterMessageId)) {
+    console.error("Invalid afterMessageId format - must be a valid Discord snowflake");
+    return [];
+  }
+
+  // Validate limit is within reasonable bounds
+  const safeLimit = Math.min(Math.max(1, limit), 100);
+
   try {
-    let url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=${limit}`;
+    // Construct URL safely using URLSearchParams
+    const url = new URL(`${DISCORD_API_BASE}/channels/${channelId}/messages`);
+    url.searchParams.set("limit", String(safeLimit));
     if (afterMessageId) {
-      url += `&after=${afterMessageId}`;
+      url.searchParams.set("after", afterMessageId);
     }
 
-    const response = await fetch(url, {
+    const response = await fetch(url.toString(), {
       headers: { Authorization: `Bot ${botToken}` },
     });
 
@@ -151,7 +231,9 @@ export async function fetchChannelMessages(
 
     return (await response.json()) as DiscordMessage[];
   } catch (error) {
-    console.error(`Error fetching messages: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `Error fetching messages: ${error instanceof Error ? error.message : String(error)}`
+    );
     return [];
   }
 }

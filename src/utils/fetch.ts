@@ -1,6 +1,12 @@
 /**
  * Fetch Utilities
  * Provides consistent fetch patterns with timeouts and abort handling
+ *
+ * SECURITY NOTE: These are low-level utilities that do NOT perform URL validation.
+ * Callers MUST validate URLs before using these functions, especially:
+ * - Use isUrlSafe() from security.ts for user-provided URLs
+ * - Validate URL format and protocol before making requests
+ * - Never pass user-controlled data directly to these functions
  */
 
 import { createLogger } from "./logger.js";

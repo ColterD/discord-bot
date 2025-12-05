@@ -984,6 +984,7 @@ ${memoryContext || "No previous context available."}
 
   /**
    * Deep web search using SearXNG - for comprehensive web search including news and current events
+   * Security: Validates and sanitizes query parameters to prevent injection
    */
   private async toolDeepWebSearch(
     query: string,
@@ -997,18 +998,30 @@ ${memoryContext || "No previous context available."}
       const timeout = config.searxng?.timeout ?? 30000;
       const defaultMaxResults = config.searxng?.defaultResults ?? 10;
 
-      // Build search params
-      const params: Record<string, string> = {
-        q: query,
-        format: "json",
-        safesearch: "0",
-      };
+      // Validate and sanitize maxResults to prevent injection
+      const safeMaxResults = Math.min(Math.max(1, maxResults ?? defaultMaxResults), 50);
 
-      if (engines?.length) {
-        params.engines = engines.join(",");
+      // Validate and sanitize engine names - only allow word characters
+      const safeEngines = engines
+        ?.filter((e) => typeof e === "string" && /^\w+$/.test(e))
+        .slice(0, 10); // Limit number of engines
+
+      // Validate and sanitize category names - only allow word characters
+      const safeCategories = categories
+        ?.filter((c) => typeof c === "string" && /^\w+$/.test(c))
+        .slice(0, 5); // Limit number of categories
+
+      // Build search params using URLSearchParams for safe encoding
+      const params = new URLSearchParams();
+      params.set("q", query);
+      params.set("format", "json");
+      params.set("safesearch", "0");
+
+      if (safeEngines?.length) {
+        params.set("engines", safeEngines.join(","));
       }
-      if (categories?.length) {
-        params.categories = categories.join(",");
+      if (safeCategories?.length) {
+        params.set("categories", safeCategories.join(","));
       }
 
       const response = await axios.get(`${searxngUrl}/search`, {
@@ -1030,7 +1043,6 @@ ${memoryContext || "No previous context available."}
       };
 
       const results: string[] = [];
-      const limit = maxResults ?? defaultMaxResults;
 
       // Add any direct answers
       if (data.answers?.[0]) {
@@ -1044,9 +1056,9 @@ ${memoryContext || "No previous context available."}
         state.gatheredInfo.push(`[Search Info] ${data.infoboxes[0].content.slice(0, 300)}`);
       }
 
-      // Add search results
+      // Add search results (limited by safeMaxResults)
       if (data.results?.length) {
-        for (const result of data.results.slice(0, limit)) {
+        for (const result of data.results.slice(0, safeMaxResults)) {
           const formatted = this.formatSearchResult(result, state);
           if (formatted) results.push(formatted);
         }

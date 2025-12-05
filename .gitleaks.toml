@@ -48,9 +48,12 @@ regexes = [
 description = "Ignore test Discord token patterns"
 paths = [
     '''tests/integration/orchestrator\.test\.ts''',
+    '''tests/integration/security\.test\.ts''',
 ]
 regexTarget = "match"
 regexes = [
     '''MTE2NTI4NDgzNjE3ODQyMjg4OA\..*''',
     '''Here's a token:.*''',
+    '''FAKE_TOKEN.*''',
+    '''TEST_ONLY_NOT_REAL''',
 ]

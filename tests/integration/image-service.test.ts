@@ -63,7 +63,11 @@ test("ImageService: bytesToMB correctly converts bytes to megabytes", () => {
 
   for (const { bytes, expectedMB } of testCases) {
     const actualMB = Math.round(bytes / BYTES_PER_MB);
-    assert.equal(actualMB, expectedMB, `${bytes} bytes should be ${expectedMB}MB, got ${actualMB}MB`);
+    assert.equal(
+      actualMB,
+      expectedMB,
+      `${bytes} bytes should be ${expectedMB}MB, got ${actualMB}MB`
+    );
   }
 });
 
@@ -87,7 +91,10 @@ test("ImageService: VRAM thresholds are correctly defined", () => {
 
 test("ImageService: VRAM increase detection works correctly", () => {
   // Simulate the VRAM calculation logic from attemptModelUnload
-  function simulateVRAMCheck(beforeUsed: number, afterUsed: number): {
+  function simulateVRAMCheck(
+    beforeUsed: number,
+    afterUsed: number
+  ): {
     rawDelta: number;
     freedBytes: number;
     increased: boolean;
@@ -124,7 +131,10 @@ test("ImageService: Unload success criteria are correct", () => {
   const MINIMUM_FREED_VRAM_BYTES = 100 * 1024 * 1024; // 100 MB
   const MINIMAL_USAGE_THRESHOLD_BYTES = 500 * 1024 * 1024; // 500 MB
 
-  function isUnloadSuccessful(freedBytes: number, beforeUsed: number): {
+  function isUnloadSuccessful(
+    freedBytes: number,
+    beforeUsed: number
+  ): {
     success: boolean;
     reason: string;
   } {

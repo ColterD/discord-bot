@@ -29,24 +29,76 @@ export interface ToolResult {
 }
 
 /**
+ * Ollama Native Tool Calling Types
+ */
+export interface OllamaToolFunction {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: {
+    readonly type: "object";
+    readonly required: string[];
+    readonly properties: Record<
+      string,
+      {
+        readonly type: string;
+        readonly description: string;
+        readonly enum?: string[];
+      }
+    >;
+  };
+}
+
+export interface OllamaTool {
+  readonly type: "function";
+  readonly function: OllamaToolFunction;
+}
+
+export interface OllamaToolCall {
+  readonly function: {
+    readonly name: string;
+    readonly arguments: Record<string, unknown>;
+  };
+}
+
+/**
  * Available tools for the agent
  */
 export const AGENT_TOOLS: Tool[] = [
   {
     name: "web_search",
     description:
-      "Search the web for information. Use this when you need current information, facts, or data that may not be in your training data.",
+      "Quick search for simple factual information (like 'capital of France'). For complex queries, current news, or in-depth research, use deep_search instead.",
     parameters: [
       {
         name: "query",
         type: "string",
-        description: "The search query",
+        description: "The search query - best for simple factual questions",
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "deep_web_search",
+    description:
+      "Comprehensive web search for current news, complex topics, or in-depth research. Use this for queries about recent events, detailed information, or when web_search returns no results.",
+    parameters: [
+      {
+        name: "query",
+        type: "string",
+        description: "The search query - can be complex or specific",
         required: true,
       },
       {
         name: "max_results",
         type: "number",
-        description: "Maximum number of results to return (default: 5)",
+        description: "Maximum number of results to return (default: 10)",
+        required: false,
+      },
+      {
+        name: "categories",
+        type: "string",
+        description:
+          "Search categories: 'general', 'news', 'images', 'science', 'it' (default: 'general')",
         required: false,
       },
     ],
@@ -124,7 +176,7 @@ export const AGENT_TOOLS: Tool[] = [
   {
     name: "think",
     description:
-      "Use this tool to think through complex problems step by step before providing a final answer. Good for reasoning, planning, and breaking down complex tasks.",
+      "Use this tool to think through complex problems step by step before providing a final answer. You can use this tool as many times as needed - thinking does NOT count against your tool call limit. Perfect for reasoning, planning, breaking down complex tasks, and reaching a well-considered conclusion.",
     parameters: [
       {
         name: "thought",
@@ -205,6 +257,52 @@ export const AGENT_TOOLS: Tool[] = [
 ];
 
 /**
+ * Convert our tool format to Ollama native format
+ */
+function convertToOllamaTool(tool: Tool): OllamaTool {
+  const required: string[] = [];
+  const properties: Record<string, { type: string; description: string; enum?: string[] }> = {};
+
+  for (const param of tool.parameters) {
+    properties[param.name] = {
+      type: param.type,
+      description: param.description,
+      ...(param.enum ? { enum: param.enum } : {}),
+    };
+    if (param.required) {
+      required.push(param.name);
+    }
+  }
+
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: "object",
+        required,
+        properties,
+      },
+    },
+  };
+}
+
+/**
+ * Get tools in Ollama native format for API calls
+ */
+export function getOllamaTools(): OllamaTool[] {
+  return AGENT_TOOLS.map(convertToOllamaTool);
+}
+
+/**
+ * Get specific tools in Ollama format by name
+ */
+export function getOllamaToolsByName(names: string[]): OllamaTool[] {
+  return AGENT_TOOLS.filter((t) => names.includes(t.name)).map(convertToOllamaTool);
+}
+
+/**
  * Format tools for LLM prompt
  */
 export function formatToolsForPrompt(): string {
@@ -237,34 +335,94 @@ export function formatToolsForPrompt(): string {
 }
 
 /**
+ * Extract content between code block markers starting at a given position
+ */
+function extractCodeBlockContent(response: string, blockStart: number): string | null {
+  const contentStart = response.indexOf("\n", blockStart);
+  if (contentStart === -1) return null;
+
+  const blockEnd = response.indexOf("```", contentStart);
+  if (blockEnd === -1) return null;
+
+  return response.slice(contentStart + 1, blockEnd).trim();
+}
+
+/**
+ * Find the matching closing brace for a JSON object
+ */
+function findMatchingBrace(response: string, braceStart: number): number {
+  let depth = 1;
+  for (let i = braceStart + 1; i < response.length && depth > 0; i++) {
+    if (response[i] === "{") depth++;
+    else if (response[i] === "}") depth--;
+    if (depth === 0) return i;
+  }
+  return -1;
+}
+
+/**
+ * Extract raw JSON object containing "tool" key
+ */
+function extractRawToolJson(response: string): string | null {
+  const toolKeyIndex = response.indexOf('"tool"');
+  if (toolKeyIndex === -1) return null;
+
+  const braceStart = response.lastIndexOf("{", toolKeyIndex);
+  if (braceStart === -1) return null;
+
+  const braceEnd = findMatchingBrace(response, braceStart);
+  if (braceEnd === -1) return null;
+
+  return response.slice(braceStart, braceEnd + 1);
+}
+
+/**
+ * Try to parse a JSON string as a tool call
+ */
+function tryParseToolCall(jsonStr: string): ToolCall | null {
+  try {
+    const parsed = JSON.parse(jsonStr);
+    if (parsed.tool && typeof parsed.tool === "string") {
+      return {
+        name: parsed.tool,
+        arguments: parsed.arguments || {},
+      };
+    }
+  } catch {
+    // Invalid JSON
+  }
+  return null;
+}
+
+/**
  * Parse tool call from LLM response
+ * Uses manual parsing to avoid ReDoS vulnerabilities from complex regex patterns
  */
 export function parseToolCall(response: string): ToolCall | null {
-  // Look for JSON blocks in various formats
-  const patterns = [
-    /```json\s*\n?([\s\S]*?)\n?```/i,
-    /```\s*\n?([\s\S]*?)\n?```/,
-    /\{[\s\S]*?"tool"[\s\S]*?\}/,
-  ];
+  const jsonCandidates: string[] = [];
 
-  for (const pattern of patterns) {
-    const match = pattern.exec(response);
-    if (match) {
-      try {
-        const jsonStr = match[1] || match[0];
-        const parsed = JSON.parse(jsonStr.trim());
+  // Extract content from ```json ... ``` blocks
+  const jsonBlockStart = response.indexOf("```json");
+  if (jsonBlockStart !== -1) {
+    const content = extractCodeBlockContent(response, jsonBlockStart);
+    if (content) jsonCandidates.push(content);
+  }
 
-        if (parsed.tool && typeof parsed.tool === "string") {
-          return {
-            name: parsed.tool,
-            arguments: parsed.arguments || {},
-          };
-        }
-      } catch {
-        // Try next pattern
-        continue;
-      }
-    }
+  // Extract content from ``` ... ``` blocks (without json specifier)
+  const genericBlockStart = response.indexOf("```");
+  if (genericBlockStart !== -1 && genericBlockStart !== jsonBlockStart) {
+    const content = extractCodeBlockContent(response, genericBlockStart);
+    if (content) jsonCandidates.push(content);
+  }
+
+  // Try to find raw JSON object with "tool" key
+  const rawJson = extractRawToolJson(response);
+  if (rawJson) jsonCandidates.push(rawJson);
+
+  // Try each candidate
+  for (const jsonStr of jsonCandidates) {
+    const result = tryParseToolCall(jsonStr);
+    if (result) return result;
   }
 
   return null;

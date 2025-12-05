@@ -13,8 +13,13 @@ const purify = DOMPurify(window);
 // PII patterns to detect and sanitize
 const PII_PATTERNS = [
   // Email addresses
+  // Pattern restructured to avoid catastrophic backtracking (S5852):
+  // - Local part: Uses atomic-like grouping by separating the first char from the rest
+  // - Domain: Uses possessive-like matching with explicit structure
+  // - Limits repetition to prevent exponential backtracking on malformed input
   {
-    pattern: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
+    pattern:
+      /[a-zA-Z0-9_%+-][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?(?:\.[a-zA-Z0-9][a-zA-Z0-9-]{0,61}[a-zA-Z0-9]?){0,3}\.[a-zA-Z]{2,10}/g,
     replacement: "[EMAIL REDACTED]",
     name: "email",
   },
@@ -170,6 +175,18 @@ export function validatePrompt(text: string): ValidationResult {
     };
   }
 
+  // Limit input size to prevent DoS attacks (ReDoS, memory exhaustion)
+  const MAX_INPUT_LENGTH = 10000;
+  if (text.length > MAX_INPUT_LENGTH) {
+    return {
+      valid: false,
+      blocked: true,
+      reason: "Input too long",
+      severity: "high",
+      warnings: [],
+    };
+  }
+
   const warnings: string[] = [];
 
   // Check for malicious patterns
@@ -319,6 +336,16 @@ export function validateLLMOutput(output: string): OutputValidationResult {
     return { valid: true, sanitized: "", issuesFound: [] };
   }
 
+  // Limit output size to prevent memory exhaustion
+  const MAX_OUTPUT_LENGTH = 100000; // 100KB max
+  if (output.length > MAX_OUTPUT_LENGTH) {
+    return {
+      valid: false,
+      sanitized: output.slice(0, MAX_OUTPUT_LENGTH) + "... [TRUNCATED]",
+      issuesFound: ["Output exceeds maximum length"],
+    };
+  }
+
   let sanitized = output;
   const issuesFound: string[] = [];
 
@@ -375,6 +402,16 @@ export function buildSecureSystemPrompt(basePrompt: string): string {
 // ============ Tool Abuse Detection ============
 
 /**
+ * Cloud metadata service IP address (link-local)
+ * This is a well-known, standardized IP used by AWS, GCP, Azure, and other cloud providers
+ * for their instance metadata services. It MUST be hardcoded as it's part of the
+ * cloud provider specification and is used here for BLOCKING, not connecting.
+ * See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html
+ * NOSONAR - Intentionally hardcoded security blocklist IP (S1313)
+ */
+const CLOUD_METADATA_IP = "169.254.169.254"; // NOSONAR
+
+/**
  * Patterns that indicate tool abuse attempts
  */
 const TOOL_ABUSE_PATTERNS = [
@@ -407,8 +444,9 @@ const TOOL_ABUSE_PATTERNS = [
     message: "Potential command injection characters detected",
   },
   // SQL injection patterns
+  // Note: Using \S+ instead of .+ for table name to prevent ReDoS (catastrophic backtracking)
   {
-    pattern: /(?:UNION\s+SELECT|DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+.+\s+SET)/i,
+    pattern: /(?:UNION\s+SELECT|DROP\s+TABLE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+\S+\s+SET)/i,
     name: "sql_injection",
     severity: "high" as const,
     message: "SQL injection pattern detected",
@@ -553,6 +591,19 @@ export function validateToolRequest(
     };
   }
 
+  // Limit total argument size to prevent DoS
+  const MAX_ARG_SIZE = 50000; // 50KB total
+  const totalSize = JSON.stringify(args).length;
+  if (totalSize > MAX_ARG_SIZE) {
+    return {
+      valid: false,
+      blocked: true,
+      reason: "Tool arguments too large",
+      severity: "high",
+      sanitizedArgs: null,
+    };
+  }
+
   const sanitizedArgs: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(args)) {
@@ -612,7 +663,7 @@ export function isUrlSafe(url: string): { safe: boolean; reason?: string } {
 
     // Block cloud metadata endpoints
     if (
-      hostname === "169.254.169.254" ||
+      hostname === CLOUD_METADATA_IP ||
       hostname === "metadata.google.internal" ||
       hostname.includes("metadata.azure")
     ) {

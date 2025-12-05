@@ -1,8 +1,29 @@
-# Prettier ignore file
+# =============================================================================
+# Prettier Ignore Configuration
+# =============================================================================
+# Files that Prettier should not format
+
+# Build output
 dist/
+
+# Dependencies
 node_modules/
+
+# Coverage reports
 coverage/
+
+# Lock files (should not be reformatted)
 *.lock
 package-lock.json
-*.md
+pnpm-lock.yaml
+yarn.lock
+
+# Logs
 logs/
+
+# Generated files
+*.min.js
+*.min.css
+
+# MCP configuration (JSON should be preserved as-is)
+mcp-servers.json

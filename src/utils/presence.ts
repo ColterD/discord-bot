@@ -2,7 +2,7 @@
  * Bot Presence Manager
  * Updates Discord rich presence with queue and AI status
  * Now with event-driven updates for faster response
- * Supports model sleep state indication
+ * Supports model sleep state indication and VRAM/RAM status
  */
 
 import { ActivityType, type PresenceStatusData } from "discord.js";
@@ -10,6 +10,8 @@ import type { Client } from "discordx";
 import { getChannelQueue } from "./rate-limiter.js";
 import { getConversationService } from "../ai/conversation.js";
 import { getAIService, onSleepStateChange } from "../ai/service.js";
+import { getImageService, onImageSleepStateChange } from "../ai/image-service.js";
+import { getVRAMManager } from "./vram-manager.js";
 import { createLogger } from "./logger.js";
 
 const log = createLogger("Presence");
@@ -45,6 +47,9 @@ let clientInstance: Client | null = null;
 // Debounce event-driven updates to prevent spam
 let pendingUpdate: ReturnType<typeof setTimeout> | null = null;
 const DEBOUNCE_MS = 500; // Wait 500ms before updating to batch rapid changes
+
+// Store interval ID for cleanup
+let presenceUpdateInterval: NodeJS.Timeout | null = null;
 
 /**
  * Record a response time for stats
@@ -143,9 +148,15 @@ export function startPresenceUpdater(client: Client): void {
   // Store client reference for event-driven updates
   clientInstance = client;
 
-  // Register for sleep state change notifications
+  // Register for LLM sleep state change notifications
   onSleepStateChange((_isAsleep) => {
-    // Trigger immediate presence update when sleep state changes
+    // Trigger immediate presence update when LLM sleep state changes
+    triggerPresenceUpdate();
+  });
+
+  // Register for image model sleep state change notifications
+  onImageSleepStateChange((_isAsleep) => {
+    // Trigger immediate presence update when image model sleep state changes
     triggerPresenceUpdate();
   });
 
@@ -156,12 +167,64 @@ export function startPresenceUpdater(client: Client): void {
   setTimeout(() => updatePresence(), 5000);
 
   // Regular updates (fallback in case event-driven updates miss something)
-  setInterval(() => updatePresence(), UPDATE_INTERVAL);
+  presenceUpdateInterval = setInterval(() => updatePresence(), UPDATE_INTERVAL);
+}
+
+/**
+ * Stop the presence updater and clean up intervals
+ */
+export function stopPresenceUpdater(): void {
+  if (presenceUpdateInterval) {
+    clearInterval(presenceUpdateInterval);
+    presenceUpdateInterval = null;
+  }
+  if (pendingUpdate) {
+    clearTimeout(pendingUpdate);
+    pendingUpdate = null;
+  }
+  clientInstance = null;
 }
 
 interface PresenceState {
   status: PresenceStatusData;
   activityName: string;
+}
+
+/**
+ * Model load location type
+ */
+type ModelLocation = "vram" | "ram" | "partial" | "unloaded";
+
+/**
+ * Get emoji for model location
+ */
+function getLocationEmoji(location: ModelLocation): string {
+  switch (location) {
+    case "vram":
+      return "🚀"; // Fast - in GPU
+    case "ram":
+      return "🐢"; // Slow - in RAM
+    case "partial":
+      return "⚡"; // Mixed
+    case "unloaded":
+      return "💤"; // Not loaded
+  }
+}
+
+/**
+ * Get short label for model location
+ */
+function getLocationLabel(location: ModelLocation): string {
+  switch (location) {
+    case "vram":
+      return "GPU";
+    case "ram":
+      return "RAM";
+    case "partial":
+      return "GPU+RAM";
+    case "unloaded":
+      return "Unloaded";
+  }
 }
 
 /**
@@ -171,7 +234,8 @@ function determinePresenceState(
   isOnline: boolean,
   isSleeping: boolean,
   active: number,
-  queued: number
+  queued: number,
+  modelLocation: ModelLocation
 ): PresenceState {
   if (!isOnline) {
     return { status: "idle", activityName: "🔧 AI Offline | /help" };
@@ -181,22 +245,25 @@ function determinePresenceState(
     return { status: "idle", activityName: "😴 Sleeping | @mention to wake" };
   }
 
+  const locationEmoji = getLocationEmoji(modelLocation);
+  const locationLabel = getLocationLabel(modelLocation);
+
   if (active > 0 || queued > 0) {
     let activityName = `💭 ${active} active`;
     if (queued > 0) {
       activityName += ` • ${queued} queued`;
     }
-    if (stats.lastResponseTime > 0) {
-      activityName += ` • ~${formatResponseTime(stats.averageResponseTime)}`;
-    }
+    activityName += ` • ${locationEmoji} ${locationLabel}`;
     return { status: "dnd", activityName };
   }
 
-  // Idle, ready for requests
-  const activityName =
-    stats.totalRequests > 0
-      ? `✨ Ready • ${stats.totalRequests} chats • ~${formatResponseTime(stats.averageResponseTime)}`
-      : "✨ Ready | @mention me!";
+  // Idle, ready for requests - show model location
+  let activityName: string;
+  if (stats.totalRequests > 0) {
+    activityName = `✨ Ready • ${locationEmoji} ${locationLabel} • ~${formatResponseTime(stats.averageResponseTime)}`;
+  } else {
+    activityName = `✨ Ready • ${locationEmoji} ${locationLabel} | @mention me!`;
+  }
   return { status: "online", activityName };
 }
 
@@ -208,11 +275,26 @@ async function updatePresence(): Promise<void> {
 
   try {
     const aiService = getAIService();
-    const isSleeping = aiService.isSleeping();
+    const imageService = getImageService();
+    const vramManager = getVRAMManager();
+    const llmSleeping = aiService.isSleeping();
+    const imageSleeping = imageService.isSleeping();
+    // Only show as fully sleeping when both LLM and image models are unloaded
+    const isSleeping = llmSleeping && imageSleeping;
     const isOnline = await checkCachedAvailability();
     const { active, queued } = getQueueStats();
 
-    const { status, activityName } = determinePresenceState(isOnline, isSleeping, active, queued);
+    // Get model load location (VRAM/RAM/partial/unloaded)
+    const modelStatus = await vramManager.getModelLoadStatus();
+    const modelLocation: ModelLocation = llmSleeping ? "unloaded" : modelStatus.location;
+
+    const { status, activityName } = determinePresenceState(
+      isOnline,
+      isSleeping,
+      active,
+      queued,
+      modelLocation
+    );
 
     // Only update presence if something actually changed
     if (status === lastStatus && activityName === lastActivityName) {
@@ -222,6 +304,10 @@ async function updatePresence(): Promise<void> {
     // Update tracking
     lastStatus = status;
     lastActivityName = activityName;
+
+    log.info(
+      `Presence updated: ${activityName} (LLM: ${llmSleeping ? "sleeping" : modelStatus.location}, Image: ${imageSleeping ? "sleeping" : "awake"}, ${modelStatus.vramUsedMB}MB VRAM)`
+    );
 
     clientInstance.user.setPresence({
       status,

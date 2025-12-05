@@ -44,13 +44,13 @@ interface RateLimitResult {
 // Configuration
 const CONFIG = {
   // Cooldown settings
-  channelCooldownMs: 20000, // 20 seconds between requests per user in channels
-  dmCooldownMs: 5000, // 5 seconds in DMs (more lenient)
+  channelCooldownMs: 5000, // 5 seconds between requests per user in channels (3 per 15s)
+  dmCooldownMs: 2000, // 2 seconds in DMs (more lenient)
 
   // Concurrency settings
   maxConcurrentPerChannel: 2, // Max simultaneous AI requests per channel
   maxQueueSize: 5, // Max queued requests per channel
-  queueTimeout: 60000, // Queue timeout (1 minute)
+  queueTimeout: 180000, // Queue timeout (3 minutes)
 
   // Rate window settings
   windowMs: config.rateLimit.windowMs,

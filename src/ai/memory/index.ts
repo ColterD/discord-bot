@@ -1,4 +1,9 @@
-export { getMem0Client, resetMem0Client } from "./mem0.js";
+export {
+  getChromaClient,
+  resetChromaClient,
+  type MemoryDocument,
+  type MemorySearchResult,
+} from "./chroma.js";
 export { MemoryManager, BOT_USER_ID, type MemoryResult } from "./memory-manager.js";
 export {
   conversationStore,

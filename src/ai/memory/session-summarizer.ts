@@ -114,21 +114,18 @@ ${formattedMessages}
 Summary:`;
 
     try {
-      const response = await axios.post<{ response: string }>(
+      const response = await axios.post(
         `${this.apiUrl}/api/generate`,
         {
           model: this.model,
-          prompt,
+          prompt: prompt,
           stream: false,
           options: {
-            temperature: config.summarization.temperature,
-            num_predict: config.summarization.maxTokens,
-            num_gpu: config.summarization.options.num_gpu,
+            temperature: 0.3,
+            num_ctx: 4096,
           },
         },
-        {
-          timeout: 60000, // 60 second timeout for CPU inference
-        }
+        { timeout: 120000 } // Increased timeout to 120s
       );
 
       const summary = response.data.response.trim();

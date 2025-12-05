@@ -23,7 +23,19 @@ interface HealthStatus {
 
 async function checkOllama(): Promise<boolean> {
   try {
-    const response = await fetch(`${process.env.OLLAMA_HOST ?? "http://ollama:11434"}/api/tags`, {
+    // SECURITY: OLLAMA_HOST is an admin-configured internal Docker service URL.
+    // The main config.ts validates this URL at startup via validateInternalServiceUrl().
+    // This healthcheck script uses the same env var directly to avoid importing full config.
+    // HTTP is acceptable as this runs on an isolated Docker network, not exposed externally.
+    const ollamaHost = process.env.OLLAMA_HOST ?? "http://ollama:11434"; // NOSONAR: Internal Docker network
+
+    // Validate URL format before fetching
+    const parsedUrl = new URL(ollamaHost);
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) {
+      return false;
+    }
+
+    const response = await fetch(`${ollamaHost}/api/tags`, {
       signal: AbortSignal.timeout(5000),
     });
     return response.ok;

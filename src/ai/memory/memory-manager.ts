@@ -1,16 +1,16 @@
 /**
  * Memory Manager
- * Wraps Mem0 to provide user-isolated semantic memory for the Discord bot
+ * Wraps ChromaDB to provide user-isolated semantic memory for the Discord bot
  * Implements three-tier memory architecture:
  * 1. Active Context (Valkey) - Current conversation
- * 2. User Profile (Mem0) - Preferences, facts
- * 3. Episodic Sessions (Mem0) - Past conversations
+ * 2. User Profile (ChromaDB) - Preferences, facts
+ * 3. Episodic Sessions (ChromaDB) - Past conversations
  *
  * CRITICAL SECURITY: User memories are strictly isolated by user_id.
  * Each user can only access their own memories.
  */
 
-import { getMem0Client } from "./mem0.js";
+import { getChromaClient, type MemoryDocument } from "./chroma.js";
 import { createLogger } from "../../utils/logger.js";
 import { config } from "../../config.js";
 import { conversationStore, type ConversationMessage } from "./conversation-store.js";
@@ -19,6 +19,38 @@ const log = createLogger("MemoryManager");
 
 // Special user ID for the bot's own memories
 export const BOT_USER_ID = "bot";
+
+/**
+ * Pattern sets for memory classification
+ * Used to determine memory type and importance
+ */
+const MEMORY_PATTERNS = {
+  // Patterns that indicate user preferences (highest importance)
+  preference: [
+    /\bi (?:like|love|prefer|enjoy|hate|dislike)\b/i,
+    /\bmy (?:favorite|favourite|preferred)\b/i,
+    /\bi (?:always|never|usually)\b/i,
+    /\bi'm (?:interested in|into|passionate about)\b/i,
+    /\bcall me\b/i,
+    /\bi want (?:you )?to\b/i,
+  ],
+  // Patterns that indicate facts about the user
+  fact: [
+    /\bi (?:am|work|live|have|own|study)\b/i,
+    /\bmy (?:name|job|work|home|house|dog|cat|pet|car|hobby|hobbies)\b/i,
+    /\bi'm (?:a|an|from)\b/i,
+    /\bi (?:was|used to|grew up)\b/i,
+    /\bi've (?:been|worked|lived)\b/i,
+  ],
+  // Patterns that indicate low-value content
+  lowValue: [
+    /^(?:ok|okay|sure|yes|no|yeah|nah|thanks|thank you|lol|haha|hmm|um|uh|idk)\.?$/i,
+    /^(?:hi|hello|hey|bye|goodbye|good night|good morning)\.?$/i,
+    /^(?:what|how|why|when|where|who)\?$/i, // Simple one-word questions
+    /\btest(?:ing)?\b/i,
+    /\bignore\b/i,
+  ],
+};
 
 interface Message {
   role: "user" | "assistant";
@@ -46,7 +78,7 @@ export class MemoryManager {
 
   /**
    * Add memories from a conversation
-   * Mem0 automatically extracts relevant facts from the messages
+   * ChromaDB stores each message as a memory with semantic embeddings
    *
    * @param userId - Discord user ID (strict isolation)
    * @param messages - Conversation messages to extract memories from
@@ -55,17 +87,52 @@ export class MemoryManager {
   async addFromConversation(
     userId: string,
     messages: Message[],
-    metadata: Record<string, unknown> = {}
+    _metadata: Record<string, unknown> = {}
   ): Promise<void> {
+    if (!config.memory.enabled) return;
+
     if (!userId) {
       log.warn("Attempted to add memory without userId - skipping");
       return;
     }
 
+    // Validate userId format (Discord snowflake: 17-19 digits)
+    if (!/^\d{17,19}$/.test(userId)) {
+      log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
+      return;
+    }
+
     try {
-      const mem0 = getMem0Client();
-      await mem0.add(messages, { userId, metadata });
-      log.debug(`Added memories from conversation for user ${userId}`);
+      const chroma = getChromaClient();
+
+      // Process each message and classify it
+      for (const msg of messages) {
+        const content = `${msg.role === "user" ? "User said" : "Assistant replied"}: ${msg.content}`;
+
+        // Classify the message content to determine memory type and importance
+        const { type, importance } = this.classifyMemory(msg.content, msg.role);
+
+        // Only store memories that meet the minimum importance threshold
+        if (importance >= config.memory.minImportanceForStorage) {
+          // Use addOrUpdateMemory to prevent duplicates and consolidate similar memories
+          const result = await chroma.addOrUpdateMemory(
+            userId,
+            content,
+            type,
+            "conversation",
+            importance
+          );
+          if (result.updated) {
+            log.debug(`Updated existing memory instead of creating duplicate for user ${userId}`);
+          }
+        } else {
+          log.debug(
+            `Skipping low-importance memory (${importance.toFixed(2)}): ${content.slice(0, 50)}...`
+          );
+        }
+      }
+
+      log.debug(`Processed ${messages.length} messages for user ${userId}`);
     } catch (error) {
       log.error(`Failed to add memories for user ${userId}:`, error as Error);
       // Don't throw - memory failures shouldn't break the conversation
@@ -73,7 +140,57 @@ export class MemoryManager {
   }
 
   /**
+   * Classify a message to determine memory type and importance
+   *
+   * Uses heuristics to identify:
+   * - User preferences (high importance, stored as user_profile)
+   * - Facts about the user (high importance, stored as fact)
+   * - Meaningful conversations (medium importance, stored as episodic)
+   * - Low-value chatter (low importance, may be filtered out)
+   */
+  private classifyMemory(
+    content: string,
+    role: "user" | "assistant"
+  ): { type: MemoryDocument["metadata"]["type"]; importance: number } {
+    // Check for low-value content first
+    if (this.matchesAnyPattern(content.trim(), MEMORY_PATTERNS.lowValue)) {
+      return { type: "episodic", importance: 0.1 };
+    }
+
+    // Very short messages are usually low value
+    if (content.length < 20) {
+      return { type: "episodic", importance: 0.2 };
+    }
+
+    // Check for preferences and facts (user messages only)
+    if (role === "user") {
+      if (this.matchesAnyPattern(content, MEMORY_PATTERNS.preference)) {
+        return { type: "preference", importance: 0.9 };
+      }
+      if (this.matchesAnyPattern(content, MEMORY_PATTERNS.fact)) {
+        return { type: "user_profile", importance: 0.8 };
+      }
+    }
+
+    // Substantive content based on length
+    if (content.length > 100 || (role === "user" && content.length > 50)) {
+      return { type: "episodic", importance: 0.5 };
+    }
+
+    // Default: low-medium importance episodic
+    return { type: "episodic", importance: 0.35 };
+  }
+
+  /**
+   * Check if content matches any pattern in the list
+   */
+  private matchesAnyPattern(content: string, patterns: RegExp[]): boolean {
+    return patterns.some((pattern) => pattern.test(content));
+  }
+
+  /**
    * Add a single memory fact
+   * Uses smart update logic - if a similar memory exists, updates it instead of creating duplicate
    *
    * @param userId - Discord user ID (strict isolation)
    * @param content - The memory content to store
@@ -89,10 +206,24 @@ export class MemoryManager {
       return false;
     }
 
+    // Validate userId format (Discord snowflake: 17-19 digits)
+    if (!/^\d{17,19}$/.test(userId)) {
+      log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
+      return false;
+    }
+
     try {
-      const mem0 = getMem0Client();
-      await mem0.add(content, { userId, metadata });
-      log.debug(`Added memory for user ${userId}`);
+      const chroma = getChromaClient();
+      const memoryType =
+        (metadata.type as "user_profile" | "episodic" | "fact" | "preference") ?? "fact";
+
+      // Use addOrUpdateMemory to prevent duplicates
+      const result = await chroma.addOrUpdateMemory(userId, content, memoryType, "manual");
+      if (result.updated) {
+        log.debug(`Updated existing memory for user ${userId}`);
+      } else {
+        log.debug(`Added new memory for user ${userId}`);
+      }
       return true;
     } catch (error) {
       log.error(`Failed to add memory for user ${userId}:`, error as Error);
@@ -109,23 +240,35 @@ export class MemoryManager {
    * @param userId - Discord user ID (strict isolation)
    * @param query - The query to search for
    * @param limit - Maximum number of results
+   * @param types - Optional memory type filter (e.g., ["user_profile", "preference"])
    */
-  async searchMemories(userId: string, query: string, limit = 5): Promise<MemoryResult[]> {
+  async searchMemories(
+    userId: string,
+    query: string,
+    limit = 5,
+    types?: MemoryDocument["metadata"]["type"][]
+  ): Promise<MemoryResult[]> {
     if (!userId) {
       log.warn("Attempted to search memories without userId - returning empty");
       return [];
     }
 
-    try {
-      const mem0 = getMem0Client();
-      const results = await mem0.search(query, { userId, limit });
+    // Validate userId format (Discord snowflake: 17-19 digits)
+    if (!/^\d{17,19}$/.test(userId)) {
+      log.warn(`Invalid userId format: ${userId} - returning empty results`);
+      return [];
+    }
 
-      // Map to our interface - Mem0 returns MemoryItem[]
-      return (results.results || []).map((r) => ({
+    try {
+      const chroma = getChromaClient();
+      const results = await chroma.searchMemories(userId, query, limit, types);
+
+      // Map ChromaDB results to our interface
+      return results.map((r) => ({
         id: r.id,
-        memory: r.memory,
-        score: r.score,
-        metadata: r.metadata,
+        memory: r.content,
+        score: r.relevanceScore,
+        metadata: r.metadata as Record<string, unknown>,
       }));
     } catch (error) {
       log.error(`Failed to search memories for user ${userId}:`, error as Error);
@@ -147,15 +290,15 @@ export class MemoryManager {
     }
 
     try {
-      const mem0 = getMem0Client();
-      const results = await mem0.getAll({ userId });
+      const chroma = getChromaClient();
+      const results = await chroma.getAllMemories(userId);
 
-      // Map to our interface - Mem0 returns MemoryItem[]
-      return (results.results || []).map((r) => ({
+      // Map ChromaDB results to our interface
+      return results.map((r) => ({
         id: r.id,
-        memory: r.memory,
-        score: r.score,
-        metadata: r.metadata,
+        memory: r.content,
+        score: r.relevanceScore,
+        metadata: r.metadata as Record<string, unknown>,
       }));
     } catch (error) {
       log.error(`Failed to get memories for user ${userId}:`, error as Error);
@@ -170,8 +313,8 @@ export class MemoryManager {
    */
   async deleteMemory(memoryId: string): Promise<boolean> {
     try {
-      const mem0 = getMem0Client();
-      await mem0.delete(memoryId);
+      const chroma = getChromaClient();
+      await chroma.deleteMemory(memoryId);
       log.debug(`Deleted memory ${memoryId}`);
       return true;
     } catch (error) {
@@ -194,13 +337,8 @@ export class MemoryManager {
     }
 
     try {
-      const mem0 = getMem0Client();
-
-      // Get count before deletion
-      const existing = await this.getAllMemories(userId);
-      const count = existing.length;
-
-      await mem0.deleteAll({ userId });
+      const chroma = getChromaClient();
+      const count = await chroma.deleteAllMemories(userId);
       log.info(`Deleted ${count} memories for user ${userId}`);
       return count;
     } catch (error) {
@@ -280,6 +418,15 @@ export class MemoryManager {
     systemContext: string;
     conversationHistory: ConversationMessage[];
   }> {
+    // If memory is disabled, return minimal context
+    if (!config.memory.enabled) {
+      const recentMessages = await conversationStore.getRecentMessages(userId, channelId, 20);
+      return {
+        systemContext: "",
+        conversationHistory: recentMessages,
+      };
+    }
+
     const maxTokens = config.memory.maxContextTokens;
     const allocation = config.memory.tierAllocation;
 
@@ -302,11 +449,13 @@ export class MemoryManager {
       activeTokens * charsPerToken
     );
 
-    // Tier 2: User Profile (from Mem0)
+    // Tier 2: User Profile - search for user preferences and facts
+    // Use specific memory types for more accurate retrieval
     const userProfileMemories = await this.searchMemories(
       userId,
-      "user preferences personality facts",
-      10
+      currentQuery, // Use current query for relevance
+      8,
+      ["user_profile", "preference", "fact"] // Only profile-type memories
     );
 
     let profileContext = "";
@@ -315,11 +464,18 @@ export class MemoryManager {
       profileContext = this.trimString(profileLines, profileTokens * charsPerToken);
     }
 
-    // Tier 3: Episodic Sessions (relevant past conversations from Mem0)
-    const episodicMemories = await this.searchMemories(userId, currentQuery, 5);
+    // Tier 3: Episodic Sessions - search past conversations
+    // Only include episodic memories, avoiding duplicates from profile search
+    const episodicMemories = await this.searchMemories(
+      userId,
+      currentQuery,
+      5,
+      ["episodic"] // Only episodic memories
+    );
 
     let episodicContext = "";
     if (episodicMemories.length > 0) {
+      // Filter out any duplicates that somehow appeared in both searches
       const episodicLines = episodicMemories
         .filter((m) => !userProfileMemories.some((p) => p.id === m.id))
         .map((m) => `• ${m.memory}`)

@@ -25,24 +25,29 @@ services:
       start_period: 10s
     environment:
       - OLLAMA_KEEP_ALIVE=5m
+      # GPU/RAM management - allow spillover to RAM when VRAM is full
+      - OLLAMA_GPU_OVERHEAD=1073741824 # Reserve 1GB VRAM for other apps (in bytes)
+      - OLLAMA_MAX_LOADED_MODELS=1 # Only one model at a time
+      - OLLAMA_FLASH_ATTENTION=1 # More efficient VRAM usage
+      - OLLAMA_NUM_PARALLEL=2 # Limit concurrent requests
 
-  qdrant:
-    image: qdrant/qdrant:latest
-    container_name: qdrant
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
     restart: unless-stopped
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "8000:8000"
     volumes:
-      - qdrant-data:/qdrant/storage
+      - chromadb-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+      - CHROMA_SERVER_AUTHN_PROVIDER=
+      - CHROMA_SERVER_AUTHZ_PROVIDER=
     networks:
       - bot-network
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "bash -c 'exec 3<>/dev/tcp/localhost/6333 && echo -e \"GET /readyz HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n\" >&3 && cat <&3 | grep -q \"all shards are ready\"'",
-        ]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/8000"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -97,6 +102,32 @@ services:
       retries: 3
       start_period: 120s
 
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080
+    networks:
+      - bot-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+
   discord-bot:
     build:
       context: .
@@ -106,23 +137,29 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
-      qdrant:
+      chromadb:
         condition: service_healthy
       valkey:
         condition: service_healthy
       comfyui:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
     env_file:
       - .env
     environment:
       - NODE_ENV=production
-      - NODE_OPTIONS=--max-old-space-size=384
+      - NODE_OPTIONS=--max-old-space-size=768
       - OLLAMA_HOST=http://ollama:11434
-      - LLM_MODEL=hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1
+      - LLM_MODEL=${LLM_MODEL:-huihui_ai/gpt-oss-abliterated:20b}
+      - SUMMARIZATION_MODEL=${LLM_MODEL:-huihui_ai/gpt-oss-abliterated:20b}
+      - RATE_LIMIT_REQUESTS=50
       - VALKEY_URL=valkey://valkey:6379
-      - QDRANT_URL=http://qdrant:6333
+      - CHROMA_URL=http://chromadb:8000
       - EMBEDDING_MODEL=qwen3-embedding:0.6b
       - COMFYUI_URL=http://comfyui:8188
+      - SEARXNG_URL=http://searxng:8080
+      - MEMORY_ENABLED=false
     # Limited filesystem access - only logs directory
     volumes:
       - ./logs:/app/logs:rw
@@ -141,10 +178,10 @@ services:
       resources:
         limits:
           cpus: "1.0"
-          memory: 512M
+          memory: 1G
         reservations:
           cpus: "0.25"
-          memory: 128M
+          memory: 256M
     # Logging configuration
     logging:
       driver: "json-file"
@@ -162,7 +199,7 @@ networks:
 volumes:
   ollama-data:
     driver: local
-  qdrant-data:
+  chromadb-data:
     driver: local
   valkey-data:
     driver: local

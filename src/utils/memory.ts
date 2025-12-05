@@ -29,7 +29,7 @@ interface MemoryThresholds {
 const DEFAULT_THRESHOLDS: MemoryThresholds = {
   warningPercent: 70,
   criticalPercent: 85,
-  maxHeapMB: 512,
+  maxHeapMB: 768,
 };
 
 let thresholds = { ...DEFAULT_THRESHOLDS };
@@ -64,26 +64,34 @@ export function formatMemoryStats(stats: MemoryStats): string {
 /**
  * Check memory health and log warnings if thresholds exceeded
  * Returns 'healthy' | 'warning' | 'critical'
+ *
+ * Note: We check against maxHeapMB (absolute limit) not heapUsagePercent
+ * because Node.js dynamically grows the heap up to max-old-space-size.
+ * heapTotal is the current allocated heap, not the maximum available.
  */
 export function checkMemoryHealth(): "healthy" | "warning" | "critical" {
   const stats = getMemoryStats();
   const now = Date.now();
 
-  // Check against thresholds
-  if (
-    stats.heapUsagePercent >= thresholds.criticalPercent ||
-    stats.heapUsedMB >= thresholds.maxHeapMB
-  ) {
+  // Calculate percentage against max heap, not current allocation
+  const percentOfMax = (stats.heapUsedMB / thresholds.maxHeapMB) * 100;
+
+  // Check against thresholds (using absolute heap size against max)
+  if (percentOfMax >= thresholds.criticalPercent) {
     if (now - lastWarningTime > WARNING_COOLDOWN) {
-      log.error(`CRITICAL memory pressure: ${formatMemoryStats(stats)}`);
+      log.error(
+        `CRITICAL memory pressure: ${formatMemoryStats(stats)} (${Math.round(percentOfMax)}% of ${thresholds.maxHeapMB}MB max)`
+      );
       lastWarningTime = now;
     }
     return "critical";
   }
 
-  if (stats.heapUsagePercent >= thresholds.warningPercent) {
+  if (percentOfMax >= thresholds.warningPercent) {
     if (now - lastWarningTime > WARNING_COOLDOWN) {
-      log.warn(`High memory usage: ${formatMemoryStats(stats)}`);
+      log.warn(
+        `High memory usage: ${formatMemoryStats(stats)} (${Math.round(percentOfMax)}% of ${thresholds.maxHeapMB}MB max)`
+      );
       lastWarningTime = now;
     }
     return "warning";

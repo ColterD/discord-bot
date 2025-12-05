@@ -3,6 +3,11 @@
  * Manages the Ollama service state (start/stop/status)
  */
 
+import config from "../config.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("AIControl");
+
 interface OllamaStatus {
   running: boolean;
   model: string | null;
@@ -19,8 +24,8 @@ export class AIControlService {
   private manuallyDisabled = false;
 
   constructor() {
-    this.ollamaHost = process.env.OLLAMA_HOST || "http://localhost:11434";
-    this.modelName = process.env.LLM_MODEL || "davidau/openai-gpt-oss-20b-abliterated";
+    this.ollamaHost = config.llm.apiUrl;
+    this.modelName = config.llm.model;
   }
 
   /**
@@ -45,6 +50,8 @@ export class AIControlService {
 
     try {
       // Check if Ollama is running
+      // SECURITY: this.ollamaHost is validated at config load time via validateInternalServiceUrl()
+      // It points to a trusted internal Docker service, not user input
       const response = await fetch(`${this.ollamaHost}/api/tags`, {
         method: "GET",
         signal: AbortSignal.timeout(5000),
@@ -95,6 +102,7 @@ export class AIControlService {
 
     try {
       // Send a minimal request to load the model into memory
+      // SECURITY: this.ollamaHost is validated at config load time via validateInternalServiceUrl()
       const response = await fetch(`${this.ollamaHost}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -135,6 +143,7 @@ export class AIControlService {
   async unloadModel(): Promise<{ success: boolean; message: string }> {
     try {
       // Ollama unloads models by setting keep_alive to 0
+      // SECURITY: this.ollamaHost is validated at config load time via validateInternalServiceUrl()
       const response = await fetch(`${this.ollamaHost}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -164,7 +173,7 @@ export class AIControlService {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("ECONNREFUSED")) {
         // Only log unexpected errors
-        console.debug("Unload model error (non-critical):", message);
+        log.debug(`Unload model error (non-critical): ${message}`);
       }
       return {
         success: true,

@@ -1,36 +1,35 @@
-import type { ArgsOf } from "discordx";
-import { Discord, On } from "discordx";
+import type { ArgsOf, Client } from "discordx";
+import { Discord, On, Once } from "discordx";
 import { Events } from "discord.js";
-import { client } from "../index.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Events");
 
 /**
  * Discord events handler class
- * Note: The ready event is handled in index.ts for reliability
  */
 @Discord()
 export class ReadyEvent {
-  /**
-   * Set up REST API event handlers for rate limit monitoring
-   * Called from index.ts after ready event
-   */
-  static setupRestEventHandlers(): void {
-    // Monitor rate limit events from Discord API
-    client.rest.on("rateLimited", (info) => {
+  @Once({ event: "clientReady" })
+  async onClientReady([client]: ArgsOf<"clientReady">): Promise<void> {
+    log.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    // Initialize application commands
+    // Cast client to discordx Client to access initApplicationCommands
+    await (client as Client).initApplicationCommands();
+    log.info("Application commands initialized");
+
+    // Set up REST API event handlers for rate limit monitoring
+    (client as Client).rest.on("rateLimited", (info) => {
       log.warn(
         `REST API rate limited: ${info.method} ${info.route} - Retry after ${info.timeToReset}ms (Global: ${info.global})`
       );
     });
-
-    // Monitor invalid request warnings (potential issues)
-    client.rest.on("invalidRequestWarning", (data) => {
+    (client as Client).rest.on("invalidRequestWarning", (data) => {
       log.warn(
         `Invalid request warning: ${data.count} invalid requests, ${data.remainingTime}ms until reset`
       );
     });
-
     log.debug("REST event handlers initialized");
   }
 

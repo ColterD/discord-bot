@@ -18,10 +18,9 @@ import { InMemoryCache } from "../../src/utils/cache.js";
 // Test constants
 const TEST_REGULAR_USER_ID = "999999999";
 // Fake Discord token pattern for testing - clearly marked as test-only
-// Format matches Discord pattern but uses obviously invalid values
-const TEST_DISCORD_TOKEN_PATTERN =
-  process.env.TEST_DISCORD_TOKEN_PATTERN ??
-  "TVRJek5EVTJOemc1TURFeU16UTFOamM0T1RBeC.R0xFVU5Y._test-hmac-signature-not-real_";
+// Format: [MN][23-27 chars].[6 chars].[27+ chars] - matches Discord detection regex
+// Uses obviously invalid values (all A's) that will NEVER work as a real token
+const TEST_DISCORD_TOKEN_PATTERN = "MAAAAAAAAAAAAAAAAAAAAAAAAA.AAAAAA.AAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 // Test runner
 type TestFn = () => Promise<void> | void;
@@ -54,6 +53,7 @@ async function runTests(): Promise<void> {
   if (failed > 0) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 // ============ Tool Permission Tests ============

@@ -95,6 +95,10 @@ export class ImageService {
   // Concurrency guards for sleep transitions
   private sleepPromise: Promise<void> | null = null;
 
+  // Track failed sleep attempts for retry logic
+  private sleepAttemptsFailed = 0;
+  private static readonly MAX_SLEEP_RETRIES = 3;
+
   constructor() {
     this.baseUrl = config.comfyui.url;
     this.clientId = `discord-bot-${Date.now()}`;
@@ -166,6 +170,7 @@ export class ImageService {
   /**
    * Put the ComfyUI models to sleep (unload from GPU memory)
    * Calls the /free endpoint to release VRAM
+   * Will retry on next interval if unload fails
    */
   async sleep(): Promise<void> {
     if (this.isAsleep || this.disposed) return;
@@ -191,45 +196,59 @@ export class ImageService {
       try {
         log.info("Putting ComfyUI models to sleep after inactivity...");
 
-        if (config.comfyui.unloadOnSleep) {
-          // Call ComfyUI's /free endpoint to unload models from VRAM
-          // unload_models=true releases model weights, free_memory=true releases cached data
-          const response = await fetch(`${this.baseUrl}/free`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              unload_models: true,
-              free_memory: true,
-            }),
-            signal: AbortSignal.timeout(10000),
-          });
+        let unloadSucceeded = true;
 
-          if (!response.ok) {
-            log.warn(`ComfyUI /free endpoint returned ${response.status}`);
-          }
+        if (config.comfyui.unloadOnSleep) {
+          unloadSucceeded = await this.attemptModelUnload();
         }
 
-        this.isAsleep = true;
-        log.info("ComfyUI models are now sleeping (unloaded from GPU)");
+        if (unloadSucceeded) {
+          // Only mark as asleep if unload actually succeeded
+          this.isAsleep = true;
+          this.sleepAttemptsFailed = 0;
+          log.info("ComfyUI models are now sleeping (unloaded from GPU)");
 
-        // Notify VRAM manager
-        const vramManager = getVRAMManager();
-        vramManager.notifyImageModelsUnloaded();
+          // Notify VRAM manager
+          const vramManager = getVRAMManager();
+          vramManager.notifyImageModelsUnloaded();
 
-        // Notify listeners (for presence updates)
-        if (imageSleepStateCallback) {
-          imageSleepStateCallback(true);
+          // Notify listeners (for presence updates)
+          if (imageSleepStateCallback) {
+            imageSleepStateCallback(true);
+          }
+        } else {
+          // Unload failed - will retry on next interval
+          this.sleepAttemptsFailed++;
+          if (this.sleepAttemptsFailed >= ImageService.MAX_SLEEP_RETRIES) {
+            log.warn(
+              `Failed to unload ComfyUI models after ${ImageService.MAX_SLEEP_RETRIES} attempts, marking as asleep anyway`
+            );
+            // After max retries, mark as asleep to prevent infinite retries
+            // but models may still be in VRAM
+            this.isAsleep = true;
+            this.sleepAttemptsFailed = 0;
+            if (imageSleepStateCallback) {
+              imageSleepStateCallback(true);
+            }
+          } else {
+            log.info(
+              `Unload failed (attempt ${this.sleepAttemptsFailed}/${ImageService.MAX_SLEEP_RETRIES}), will retry on next interval`
+            );
+          }
         }
       } catch (error) {
         log.warn(
           `Failed to put ComfyUI to sleep: ${error instanceof Error ? error.message : String(error)}`
         );
-        // Mark as asleep anyway since we tried
-        this.isAsleep = true;
-        if (imageSleepStateCallback) {
-          imageSleepStateCallback(true);
+        // Track failed attempt for retry logic
+        this.sleepAttemptsFailed++;
+        if (this.sleepAttemptsFailed >= ImageService.MAX_SLEEP_RETRIES) {
+          // After max retries, mark as asleep to prevent infinite retries
+          this.isAsleep = true;
+          this.sleepAttemptsFailed = 0;
+          if (imageSleepStateCallback) {
+            imageSleepStateCallback(true);
+          }
         }
       } finally {
         this.sleepPromise = null;
@@ -237,6 +256,71 @@ export class ImageService {
     })();
 
     await this.sleepPromise;
+  }
+
+  /**
+   * Attempt to unload models from ComfyUI and verify the result
+   * Returns true if unload succeeded, false otherwise
+   */
+  private async attemptModelUnload(): Promise<boolean> {
+    try {
+      // Get VRAM status before unload
+      const beforeStatus = await this.getVRAMStatus();
+      const beforeUsed = beforeStatus?.used ?? 0;
+
+      // Call ComfyUI's /free endpoint to unload models from VRAM
+      // unload_models=true releases model weights, free_memory=true releases cached data
+      const response = await fetch(`${this.baseUrl}/free`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          unload_models: true,
+          free_memory: true,
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (!response.ok) {
+        log.warn(`ComfyUI /free endpoint returned ${response.status}`);
+        return false;
+      }
+
+      // Small delay to allow VRAM to be freed
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      // Verify that VRAM was actually freed
+      const afterStatus = await this.getVRAMStatus();
+
+      if (afterStatus && beforeStatus) {
+        const freedMB = (beforeUsed - afterStatus.used) / (1024 * 1024);
+        if (freedMB > 100) {
+          // Freed at least 100MB, consider successful
+          log.info(`ComfyUI models unloaded, freed ${Math.round(freedMB)}MB VRAM`);
+          return true;
+        } else if (beforeUsed < 500 * 1024 * 1024) {
+          // Less than 500MB was in use, likely no models were loaded
+          log.debug("ComfyUI had minimal VRAM usage, nothing significant to unload");
+          return true;
+        } else {
+          // Had significant VRAM but didn't free much
+          log.warn(
+            `ComfyUI /free completed but only freed ${Math.round(freedMB)}MB (before: ${Math.round(beforeUsed / (1024 * 1024))}MB)`
+          );
+          return false;
+        }
+      }
+
+      // Couldn't verify, but endpoint returned OK so assume success
+      log.debug("Could not verify VRAM status, assuming unload succeeded");
+      return true;
+    } catch (error) {
+      log.warn(
+        `Error during model unload: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return false;
+    }
   }
 
   /**
@@ -250,6 +334,7 @@ export class ImageService {
 
     log.info("Waking up ComfyUI...");
     this.isAsleep = false;
+    this.sleepAttemptsFailed = 0; // Reset failed attempts counter
     this.updateActivity();
 
     // Notify VRAM manager

@@ -99,6 +99,11 @@ export class ImageService {
   private sleepAttemptsFailed = 0;
   private static readonly MAX_SLEEP_RETRIES = 3;
 
+  // VRAM unload verification constants (in bytes)
+  private static readonly MINIMUM_FREED_VRAM_BYTES = 100 * 1024 * 1024; // 100 MB minimum freed
+  private static readonly MINIMAL_USAGE_THRESHOLD_BYTES = 500 * 1024 * 1024; // 500 MB threshold
+  private static readonly VRAM_STABILIZATION_DELAY_MS = 500; // Delay to allow VRAM to stabilize
+
   constructor() {
     this.baseUrl = config.comfyui.url;
     this.clientId = `discord-bot-${Date.now()}`;
@@ -287,19 +292,24 @@ export class ImageService {
         return false;
       }
 
-      // Small delay to allow VRAM to be freed
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      // Small delay to allow VRAM to stabilize
+      await new Promise((resolve) =>
+        setTimeout(resolve, ImageService.VRAM_STABILIZATION_DELAY_MS)
+      );
 
       // Verify that VRAM was actually freed
       const afterStatus = await this.getVRAMStatus();
 
       if (afterStatus && beforeStatus) {
-        const freedMB = (beforeUsed - afterStatus.used) / (1024 * 1024);
-        if (freedMB > 100) {
+        // Handle edge case where VRAM usage increased (other processes)
+        const freedBytes = Math.max(0, beforeUsed - afterStatus.used);
+        const freedMB = freedBytes / (1024 * 1024);
+
+        if (freedBytes >= ImageService.MINIMUM_FREED_VRAM_BYTES) {
           // Freed at least 100MB, consider successful
           log.info(`ComfyUI models unloaded, freed ${Math.round(freedMB)}MB VRAM`);
           return true;
-        } else if (beforeUsed < 500 * 1024 * 1024) {
+        } else if (beforeUsed < ImageService.MINIMAL_USAGE_THRESHOLD_BYTES) {
           // Less than 500MB was in use, likely no models were loaded
           log.debug("ComfyUI had minimal VRAM usage, nothing significant to unload");
           return true;

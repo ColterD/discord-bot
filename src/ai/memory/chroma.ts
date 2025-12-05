@@ -2,7 +2,7 @@
  * ChromaDB Memory Client
  * Vector-based semantic memory using ChromaDB with Ollama embeddings
  *
- * Replaces mem0ai with a native TypeScript solution that works properly with Ollama
+ * Native TypeScript solution for long-term memory storage using vector search
  */
 
 import { randomUUID } from "node:crypto";

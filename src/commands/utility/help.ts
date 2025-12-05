@@ -21,7 +21,9 @@ export class HelpCommands {
           value: [
             "`@mention` - Chat with me in any channel",
             "`DM` - Send me a direct message for private conversations",
-            "`/ask` - Ask a one-off question",
+            "`/ask` - Ask a one-off question (with optional file attachment)",
+            "`/remember` - Tell me something to remember about you",
+            "`/forget` - Clear all memories I have about you",
             "`/clear-context` - Clear conversation memory",
           ].join("\n"),
           inline: false,
@@ -40,7 +42,7 @@ export class HelpCommands {
           value: [
             "`/summarize` - Summarize recent channel messages",
             "`/translate` - Translate text to another language",
-            "`/explain` - Get an explanation of a topic",
+            "`/imagine` - Generate an image from a text prompt",
             "`Right-click message → Analyze Message` - Analyze any message",
           ].join("\n"),
           inline: false,
@@ -62,8 +64,7 @@ export class HelpCommands {
           value: [
             "`/kick` - Kick a member",
             "`/ban` - Ban a member",
-            "`/timeout` - Timeout a member",
-            "`/purge` - Delete messages in bulk",
+            "`/clear` - Delete messages in bulk",
           ].join("\n"),
           inline: false,
         },

@@ -11,7 +11,7 @@ This is a **TypeScript** Discord bot built with **discordx**, featuring local LL
 - **AI Orchestrator**: `src/ai/orchestrator.ts` manages the AI loop:
   - Uses **prompt-based tool calling** (JSON in system prompt), NOT native LLM tool calling.
   - Integrates **MCP** tools via `src/mcp/client.ts`.
-  - Manages **Memory**: Active (Valkey), User Profile (Mem0), Episodic (SurrealDB).
+  - Manages **Memory**: Active (Valkey), User Profile (ChromaDB), Episodic (ChromaDB).
 - **Security**: `src/security/` handles impersonation detection and tool permissions.
 
 ## Development Workflow
@@ -71,7 +71,7 @@ This is a **TypeScript** Discord bot built with **discordx**, featuring local LL
 - When working with Docker, ensure that container configurations are optimized for performance and security.
 - Always document new code and changes thoroughly to aid future maintenance and onboarding of new developers.
 - Keep performance in mind, especially when dealing with AI responses and database interactions.
-- Regularly back up important data, especially user profiles and episodic memory stored in SurrealDB.
+- Regularly back up important data, especially user profiles and episodic memory stored in ChromaDB.
 - Stay compliant with Discord's API terms and guidelines to avoid any disruptions in service.
 - Perform regular code reviews to ensure adherence to coding standards and project guidelines.
 - Continuously monitor the bot's performance and user feedback to identify areas for improvement.

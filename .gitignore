@@ -18,7 +18,7 @@ dist/
 # -----------------------------------------------------------------------------
 # Environment Files (contain secrets)
 # -----------------------------------------------------------------------------
-# .env  # Temporarily commented for Antigravity testing access
+.env
 .env.local
 .env.*.local
 .env.production
@@ -73,6 +73,13 @@ coverage/
 *.lcov
 junit.xml
 test-results.xml
+test-results.json
+test-results.log
+test-run.log
+test-run-output.txt
+test-execution-results.txt
+final-test-log.txt
+*-test-results.txt
 
 # -----------------------------------------------------------------------------
 # Linter Caches

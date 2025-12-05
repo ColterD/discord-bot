@@ -4,6 +4,45 @@
  */
 
 /**
+ * Validate that a URL is well-formed and uses an allowed protocol.
+ * This is used for internal service URLs set via environment variables.
+ * These URLs point to trusted internal infrastructure (Docker services)
+ * and are set by administrators, not user input.
+ *
+ * @param url - The URL to validate
+ * @param name - The name of the configuration (for error messages)
+ * @param allowedProtocols - Allowed protocols (default: http, https)
+ * @returns The validated URL string
+ * @throws Error if URL is malformed or uses disallowed protocol
+ *
+ * @security This validates admin-configured internal service URLs, not user input.
+ * The URLs point to Docker-internal services (ollama, chromadb, comfyui, etc.)
+ * which are explicitly allowed to be internal/private addresses.
+ */
+function validateInternalServiceUrl(
+  url: string,
+  name: string,
+  allowedProtocols: string[] = ["http:", "https:", "valkey:", "redis:"]
+): string {
+  try {
+    const parsed = new URL(url);
+    if (!allowedProtocols.includes(parsed.protocol)) {
+      throw new Error(
+        `Invalid ${name}: protocol "${parsed.protocol}" not allowed. ` +
+          `Allowed: ${allowedProtocols.join(", ")}`
+      );
+    }
+    // Return the original URL string (validated)
+    return url;
+  } catch (error) {
+    if (error instanceof TypeError) {
+      throw new Error(`Invalid ${name}: "${url}" is not a valid URL`);
+    }
+    throw error;
+  }
+}
+
+/**
  * Validate and parse a positive integer from environment variable
  * @throws Error if value is invalid
  */
@@ -79,7 +118,10 @@ export const config = {
 
   // LLM Configuration (Ollama in Docker container)
   llm: {
-    apiUrl: process.env.OLLAMA_HOST ?? "http://ollama:11434",
+    apiUrl: validateInternalServiceUrl(
+      process.env.OLLAMA_HOST ?? "http://ollama:11434",
+      "OLLAMA_HOST"
+    ),
     model:
       process.env.LLM_MODEL ??
       "hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1",
@@ -144,7 +186,10 @@ export const config = {
 
   // Valkey Configuration (Conversation Caching)
   valkey: {
-    url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
+    url: validateInternalServiceUrl(
+      process.env.VALKEY_URL ?? "valkey://valkey:6379",
+      "VALKEY_URL"
+    ),
     // Conversation TTL (30 minutes of inactivity)
     conversationTtlMs: validatePositiveInt(
       process.env.VALKEY_CONVERSATION_TTL_MS,
@@ -158,7 +203,10 @@ export const config = {
 
   // ChromaDB Configuration (Vector Store for Memory)
   chroma: {
-    url: process.env.CHROMA_URL ?? "http://chromadb:8000",
+    url: validateInternalServiceUrl(
+      process.env.CHROMA_URL ?? "http://chromadb:8000",
+      "CHROMA_URL"
+    ),
     collectionName: process.env.CHROMA_COLLECTION ?? "memories",
   },
 
@@ -264,7 +312,10 @@ export const config = {
       transport: (process.env.DOCKER_MCP_TRANSPORT ?? "stdio") as "stdio" | "http",
       // Gateway URL (only used for HTTP transport)
       // Default: http://host.docker.internal:8811 for Docker Desktop
-      url: process.env.DOCKER_MCP_GATEWAY_URL ?? "http://host.docker.internal:8811",
+      url: validateInternalServiceUrl(
+        process.env.DOCKER_MCP_GATEWAY_URL ?? "http://host.docker.internal:8811",
+        "DOCKER_MCP_GATEWAY_URL"
+      ),
       // MCP endpoint path (only used for HTTP transport)
       endpoint: process.env.DOCKER_MCP_GATEWAY_ENDPOINT ?? "/mcp",
       // Bearer token for authentication (used for HTTP transport)
@@ -328,7 +379,10 @@ export const config = {
 
   // SearXNG Configuration (Web Search)
   searxng: {
-    url: process.env.SEARXNG_URL ?? "http://searxng:8080",
+    url: validateInternalServiceUrl(
+      process.env.SEARXNG_URL ?? "http://searxng:8080",
+      "SEARXNG_URL"
+    ),
     // Default number of results to return
     defaultResults: 10,
     // Timeout for search requests (ms)
@@ -337,7 +391,10 @@ export const config = {
 
   // ComfyUI Configuration (Image Generation)
   comfyui: {
-    url: process.env.COMFYUI_URL ?? "http://comfyui:8188",
+    url: validateInternalServiceUrl(
+      process.env.COMFYUI_URL ?? "http://comfyui:8188",
+      "COMFYUI_URL"
+    ),
     // Default workflow for Z-Image-Turbo
     defaultModel: "z-image-turbo",
     // Max queue size to prevent overloading

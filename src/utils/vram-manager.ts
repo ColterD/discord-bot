@@ -10,6 +10,10 @@
  * - Intelligent model loading/unloading
  * - Priority-based resource allocation
  * - Prevents VRAM contention between services
+ *
+ * @security All HTTP requests use URLs from config (config.llm.apiUrl, config.comfyui.url)
+ * which are validated at config load time via validateInternalServiceUrl().
+ * These are trusted internal Docker service URLs, not user input.
  */
 
 import axios from "axios";

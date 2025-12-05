@@ -354,6 +354,21 @@ ${memoryContext}`;
     }
 
     try {
+      // Validate the URL is from Discord CDN
+      // SECURITY: Discord attachment URLs should only come from Discord's CDN
+      const parsedUrl = new URL(file.url);
+      const allowedHosts = [
+        "cdn.discordapp.com",
+        "media.discordapp.net",
+        "attachments.discordapp.com",
+      ];
+      if (!allowedHosts.includes(parsedUrl.hostname.toLowerCase())) {
+        return { success: false, error: "Invalid attachment URL" };
+      }
+      if (!["https:"].includes(parsedUrl.protocol)) {
+        return { success: false, error: "Invalid attachment URL protocol" };
+      }
+
       // Fetch file content
       const response = await fetch(file.url, {
         signal: AbortSignal.timeout(10000),

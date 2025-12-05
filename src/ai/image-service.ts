@@ -76,6 +76,10 @@ export function onImageSleepStateChange(callback: ImageSleepStateCallback): void
  * ComfyUI Image Service
  * Handles image generation via ComfyUI with Z-Image-Turbo
  * Supports automatic sleep mode after inactivity
+ *
+ * @security All HTTP requests to ComfyUI use config.comfyui.url which is validated
+ * at config load time via validateInternalServiceUrl(). This is a trusted internal
+ * Docker service URL set by administrators, not user input.
  */
 export class ImageService {
   private readonly baseUrl: string;

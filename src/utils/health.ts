@@ -24,12 +24,17 @@ interface ServiceConfig {
 
 /**
  * Check if a single service is healthy
+ *
+ * @security The service.url comes from config, which validates URLs at load time
+ * via validateInternalServiceUrl(). These are trusted internal Docker service URLs,
+ * not user-supplied input.
  */
 async function checkService(service: ServiceConfig, timeout = 5000): Promise<HealthCheckResult> {
   const startTime = Date.now();
   const url = `${service.url}${service.path ?? ""}`;
 
   try {
+    // SECURITY: service.url is validated at config load time via validateInternalServiceUrl()
     const response = await fetch(url, {
       method: "GET",
       signal: AbortSignal.timeout(timeout),

@@ -182,13 +182,15 @@ test("Security: Safe tool requests pass", () => {
 // ============ URL Safety Tests ============
 
 test("Security: Private IP addresses blocked", () => {
+  // NOSONAR: These are TEST DATA values to verify isUrlSafe() correctly blocks private IPs.
+  // They are intentionally insecure URLs used as test inputs, NOT actual service endpoints.
   const privateIPs = [
-    "http://192.168.1.1",
-    "http://10.0.0.1",
-    "http://172.16.0.1",
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://169.254.169.254", // AWS metadata
+    "http://192.168.1.1", // NOSONAR: Test data
+    "http://10.0.0.1", // NOSONAR: Test data
+    "http://172.16.0.1", // NOSONAR: Test data
+    "http://localhost", // NOSONAR: Test data
+    "http://127.0.0.1", // NOSONAR: Test data
+    "http://169.254.169.254", // NOSONAR: Test data - AWS metadata endpoint
   ];
 
   for (const url of privateIPs) {
@@ -213,9 +215,10 @@ test("Security: Dangerous protocols blocked", () => {
 });
 
 test("Security: Safe URLs pass", () => {
+  // These are test inputs to verify isUrlSafe() allows legitimate external URLs.
   const safeUrls = [
     "https://example.com",
-    "http://www.github.com",
+    "http://www.github.com", // NOSONAR: Test data - verifying HTTP to public domains is allowed
     "https://en.wikipedia.org/wiki/TypeScript",
   ];
 

@@ -84,4 +84,10 @@ This is a **TypeScript** Discord bot built with **discordx**, featuring local LL
 - Utilize continuous integration and deployment (CI/CD) pipelines for efficient development workflows.
 - Use monitoring tools to track the bot's health and performance in real-time.
 - Utilize caching strategies to improve response times for frequently accessed data.
-- Me
+- Memory management should be efficient to prevent performance degradation over time.
+- Regularly update dependencies to benefit from security patches and new features.
+- Clean up unused code and dependencies to maintain a lean codebase.
+- Clean up and close any resources (like database connections or file handles) after use to prevent leaks.
+- When handling user input, always sanitize and validate to prevent injection attacks.
+- Clean code is more important than clever code; prioritize clarity over complexity.
+- When in doubt, refer to official documentation and best practices for libraries and frameworks used.

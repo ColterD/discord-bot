@@ -199,13 +199,9 @@ ${memoryContext}`;
       });
 
       // Store memory from conversation (async, don't wait)
-      this.memoryManager
-        .addMemory(userId, `User asked: ${sanitizedText}`)
-        .catch((err) => {
-          log.debug(
-            `Failed to add memory: ${err instanceof Error ? err.message : String(err)}`
-          );
-        });
+      this.memoryManager.addMemory(userId, `User asked: ${sanitizedText}`).catch((err) => {
+        log.debug(`Failed to add memory: ${err instanceof Error ? err.message : String(err)}`);
+      });
 
       // Build footer with rate limit info
       const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);

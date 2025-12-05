@@ -5,6 +5,7 @@
  * Replaces mem0ai with a native TypeScript solution that works properly with Ollama
  */
 
+import { randomUUID } from "node:crypto";
 import { OllamaEmbeddingFunction } from "@chroma-core/ollama";
 import { ChromaClient, type Collection, type IncludeEnum, type Where } from "chromadb";
 import { config } from "../../config.js";
@@ -307,9 +308,9 @@ class ChromaMemoryClient {
       // Delete the old memory
       await collection.delete({ ids: [id] });
 
-      // Create new ID with updated timestamp
+      // Create new ID with updated timestamp using cryptographically secure random
       const userId = existingMeta.userId as string;
-      const newId = `${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const newId = `${userId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
       const timestamp = Date.now();
 
       // Merge metadata - preserve original, apply updates
@@ -399,7 +400,8 @@ class ChromaMemoryClient {
   ): Promise<string> {
     const collection = await this.ensureInitialized();
 
-    const id = `${userId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    // Use cryptographically secure random for ID generation
+    const id = `${userId}-${Date.now()}-${randomUUID().slice(0, 8)}`;
     const timestamp = Date.now();
 
     try {

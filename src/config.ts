@@ -117,9 +117,11 @@ export const config = {
   },
 
   // LLM Configuration (Ollama in Docker container)
+  // SECURITY: Internal Docker service URLs use HTTP as they run on an isolated Docker network.
+  // These are NOT user-facing and are validated at startup via validateInternalServiceUrl().
   llm: {
     apiUrl: validateInternalServiceUrl(
-      process.env.OLLAMA_HOST ?? "http://ollama:11434",
+      process.env.OLLAMA_HOST ?? "http://ollama:11434", // NOSONAR: Internal Docker network
       "OLLAMA_HOST"
     ),
     model:
@@ -186,10 +188,7 @@ export const config = {
 
   // Valkey Configuration (Conversation Caching)
   valkey: {
-    url: validateInternalServiceUrl(
-      process.env.VALKEY_URL ?? "valkey://valkey:6379",
-      "VALKEY_URL"
-    ),
+    url: validateInternalServiceUrl(process.env.VALKEY_URL ?? "valkey://valkey:6379", "VALKEY_URL"),
     // Conversation TTL (30 minutes of inactivity)
     conversationTtlMs: validatePositiveInt(
       process.env.VALKEY_CONVERSATION_TTL_MS,
@@ -202,11 +201,9 @@ export const config = {
   },
 
   // ChromaDB Configuration (Vector Store for Memory)
+  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
   chroma: {
-    url: validateInternalServiceUrl(
-      process.env.CHROMA_URL ?? "http://chromadb:8000",
-      "CHROMA_URL"
-    ),
+    url: validateInternalServiceUrl(process.env.CHROMA_URL ?? "http://chromadb:8000", "CHROMA_URL"), // NOSONAR: Internal Docker network
     collectionName: process.env.CHROMA_COLLECTION ?? "memories",
   },
 
@@ -311,9 +308,10 @@ export const config = {
       // http: Connects to externally running gateway via StreamableHTTP transport
       transport: (process.env.DOCKER_MCP_TRANSPORT ?? "stdio") as "stdio" | "http",
       // Gateway URL (only used for HTTP transport)
-      // Default: http://host.docker.internal:8811 for Docker Desktop
+      // SECURITY: Default uses HTTP for host.docker.internal which is a Docker internal address.
+      // This is NOT exposed externally and runs within Docker's isolated network.
       url: validateInternalServiceUrl(
-        process.env.DOCKER_MCP_GATEWAY_URL ?? "http://host.docker.internal:8811",
+        process.env.DOCKER_MCP_GATEWAY_URL ?? "http://host.docker.internal:8811", // NOSONAR: Internal Docker network
         "DOCKER_MCP_GATEWAY_URL"
       ),
       // MCP endpoint path (only used for HTTP transport)
@@ -378,9 +376,10 @@ export const config = {
   },
 
   // SearXNG Configuration (Web Search)
+  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
   searxng: {
     url: validateInternalServiceUrl(
-      process.env.SEARXNG_URL ?? "http://searxng:8080",
+      process.env.SEARXNG_URL ?? "http://searxng:8080", // NOSONAR: Internal Docker network
       "SEARXNG_URL"
     ),
     // Default number of results to return
@@ -390,9 +389,10 @@ export const config = {
   },
 
   // ComfyUI Configuration (Image Generation)
+  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
   comfyui: {
     url: validateInternalServiceUrl(
-      process.env.COMFYUI_URL ?? "http://comfyui:8188",
+      process.env.COMFYUI_URL ?? "http://comfyui:8188", // NOSONAR: Internal Docker network
       "COMFYUI_URL"
     ),
     // Default workflow for Z-Image-Turbo

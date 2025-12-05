@@ -994,7 +994,10 @@ ${memoryContext || "No previous context available."}
     categories?: string[]
   ): Promise<ToolResult> {
     try {
-      const searxngUrl = config.searxng?.url ?? "http://searxng:8080";
+      // SECURITY: SearXNG URL is an admin-configured internal Docker service.
+      // HTTP is acceptable here as it runs on an isolated Docker network, not exposed externally.
+      // The URL is validated at startup via validateInternalServiceUrl() in config.ts.
+      const searxngUrl = config.searxng?.url ?? "http://searxng:8080"; // NOSONAR: Internal Docker network
       const timeout = config.searxng?.timeout ?? 30000;
       const defaultMaxResults = config.searxng?.defaultResults ?? 10;
 

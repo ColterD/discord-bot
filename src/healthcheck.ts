@@ -26,7 +26,8 @@ async function checkOllama(): Promise<boolean> {
     // SECURITY: OLLAMA_HOST is an admin-configured internal Docker service URL.
     // The main config.ts validates this URL at startup via validateInternalServiceUrl().
     // This healthcheck script uses the same env var directly to avoid importing full config.
-    const ollamaHost = process.env.OLLAMA_HOST ?? "http://ollama:11434";
+    // HTTP is acceptable as this runs on an isolated Docker network, not exposed externally.
+    const ollamaHost = process.env.OLLAMA_HOST ?? "http://ollama:11434"; // NOSONAR: Internal Docker network
 
     // Validate URL format before fetching
     const parsedUrl = new URL(ollamaHost);

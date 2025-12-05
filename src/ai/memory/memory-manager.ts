@@ -402,8 +402,8 @@ export class MemoryManager {
    *
    * Tier allocation (from config):
    * - Active Context: 50% - Current conversation from Valkey
-   * - User Profile: 30% - User preferences and facts from Mem0
-   * - Episodic: 20% - Relevant past sessions from Mem0
+   * - User Profile: 30% - User preferences and facts from ChromaDB
+   * - Episodic: 20% - Relevant past sessions from ChromaDB
    *
    * @param userId - Discord user ID
    * @param channelId - Discord channel ID

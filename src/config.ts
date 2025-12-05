@@ -86,7 +86,7 @@ function validateFloat(
 export const config = {
   // Bot settings
   bot: {
-    name: "Discord Bot",
+    name: process.env.BOT_NAME ?? "Discord Bot",
     prefix: "!",
   },
 
@@ -216,7 +216,7 @@ export const config = {
     },
   },
 
-  // Memory Configuration (Mem0 + Three-tier architecture)
+  // Memory Configuration (ChromaDB + Three-tier architecture)
   memory: {
     // Master switch for memory system
     enabled: process.env.MEMORY_ENABLED !== "false",

@@ -12,14 +12,23 @@ A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring
 - 🎯 **Slash Commands** - Modern Discord slash commands with decorators
 - 🤖 **AI Integration** - Local LLM support via Ollama (optimized for RTX 4090)
 - 🧠 **ChatGPT-Style Memory** - Three-tier memory system: Active context (Valkey), User profile (ChromaDB), Episodic memory (ChromaDB)
-- 🔧 **Tool Calling** - AI agent with tool execution loop (web search, calculations, image generation)
-- 🔌 **MCP Integration** - Model Context Protocol support for external tools
+- 🔧 **Tool Calling** - AI agent with tool execution loop including:
+  - 🔍 Web search (quick and deep search via SearXNG)
+  - 🌐 URL fetching and content extraction
+  - 📚 arXiv paper search
+  - 🧮 Mathematical calculations
+  - ⏰ Timezone conversions
+  - 📖 Wikipedia summaries
+  - 💭 Chain-of-thought reasoning
+  - 💾 Memory storage and recall
+- 🔌 **MCP Integration** - Model Context Protocol support for external tools (stdio and Docker gateway transports)
 - 🛡️ **Security** - Impersonation detection, prompt injection protection, 4-tier tool permissions
 - 🖼️ **Image Generation** - ComfyUI integration for AI image generation
 - 🔒 **Moderation Tools** - Kick, ban, and message management
 - 🧩 **Interactive UI** - Buttons, select menus, and modals
 - 🔒 **Guards & Middleware** - Permission checks, rate limiting, bot filtering
-- 🐳 **Docker Support** - Containerized deployment with security hardening
+- 🐳 **Docker Support** - Full containerized deployment with security hardening
+- 📊 **GPU/VRAM Management** - Intelligent VRAM management for shared GPU workloads
 
 ## Architecture
 
@@ -90,9 +99,23 @@ src/
 - Node.js 20+
 - npm or pnpm
 - Discord Bot Token ([Discord Developer Portal](https://discord.com/developers/applications))
-- Ollama (for AI features) - [ollama.ai](https://ollama.ai)
 - Docker & Docker Compose (for containerized deployment)
-- Valkey (Redis-compatible cache, included in Docker Compose)
+
+### Optional (for AI features)
+
+- Ollama - [ollama.ai](https://ollama.ai) (or use Docker container)
+- NVIDIA GPU with CUDA support (recommended: RTX 4090 with 24GB VRAM)
+- ComfyUI (for image generation)
+
+### Docker Services (included in docker-compose.yml)
+
+| Service  | Purpose                           | Port  |
+| -------- | --------------------------------- | ----- |
+| Ollama   | LLM inference                     | 11434 |
+| ChromaDB | Vector store for long-term memory | 8000  |
+| Valkey   | Redis-compatible cache            | 6379  |
+| ComfyUI  | AI image generation               | 8188  |
+| SearXNG  | Privacy-respecting web search     | 8080  |
 
 ## Setup
 
@@ -113,7 +136,8 @@ cp .env.example .env
 Edit `.env` with your credentials:
 
 ```env
-# Discord
+# Discord (REQUIRED)
+BOT_NAME=My Discord Bot
 DISCORD_TOKEN=your_bot_token_here
 DISCORD_CLIENT_ID=your_application_client_id
 DEV_GUILD_ID=your_development_guild_id
@@ -122,19 +146,24 @@ BOT_OWNER_IDS=your_discord_user_id
 # Environment
 NODE_ENV=development
 
-# Ollama/LLM
+# LLM Configuration
 OLLAMA_HOST=http://ollama:11434
 LLM_MODEL=hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1
-
-# Valkey (Redis-compatible)
-VALKEY_URL=valkey://valkey:6379
-
-# Orchestrator
 LLM_USE_ORCHESTRATOR=true
 
-# ComfyUI (optional, for image generation)
+# Memory System
+VALKEY_URL=valkey://valkey:6379
+CHROMA_URL=http://chromadb:8000
+EMBEDDING_MODEL=qwen3-embedding:0.6b
+
+# Web Search
+SEARXNG_URL=http://searxng:8080
+
+# Image Generation (optional)
 COMFYUI_URL=http://comfyui:8188
 ```
+
+See `.env.example` for all available configuration options.
 
 ### 3. Setup Ollama (for AI features)
 
@@ -188,23 +217,82 @@ docker-compose logs -f
 - Read-only root filesystem
 - Non-root user execution
 - Dropped Linux capabilities
-- Resource limits (1 CPU, 512MB RAM)
+- Resource limits (1 CPU, 1GB RAM)
 - No new privileges flag
+- Isolated Docker network
 
-### Accessing Local Ollama from Docker
+### Full Stack Deployment
 
-The container uses `host.docker.internal:11434` to reach Ollama running on your host machine. Ensure Ollama is running before starting the container.
+The `docker-compose.yml` includes all services:
+
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs for specific service
+docker-compose logs -f discord-bot
+docker-compose logs -f ollama
+
+# Stop all services
+docker-compose down
+```
+
+### GPU Configuration
+
+The stack is optimized for NVIDIA GPUs:
+
+- **Ollama**: GPU passthrough with flash attention enabled
+- **ComfyUI**: Dedicated GPU access for image generation
+- **VRAM Management**: Automatic model unloading when VRAM is constrained
 
 ## Commands
 
 ### Utility
 
-| Command          | Description             |
-| ---------------- | ----------------------- |
-| `/ping`          | Check bot latency       |
-| `/info`          | Display bot information |
-| `/avatar [user]` | Get user's avatar       |
-| `/server`        | Show server information |
+| Command          | Description                    |
+| ---------------- | ------------------------------ |
+| `/ping`          | Check bot latency              |
+| `/info`          | Display bot information        |
+| `/help`          | Show all commands and features |
+| `/avatar [user]` | Get user's avatar              |
+| `/server`        | Show server information        |
+| `/ai-status`     | Check AI service status        |
+| `/clear-context` | Clear conversation memory      |
+
+### AI Chat
+
+| Command                         | Description                            |
+| ------------------------------- | -------------------------------------- |
+| `/ask <question> [mode] [file]` | Ask the AI (creative/balanced/precise) |
+| `/remember <fact>`              | Tell the AI something to remember      |
+| `/forget`                       | Clear all memories about you           |
+| `/summarize [count]`            | Summarize recent channel messages      |
+| `/translate <text> <language>`  | Translate text                         |
+
+### AI Agent & Research
+
+| Command                     | Description                            |
+| --------------------------- | -------------------------------------- |
+| `/agent <task> [verbose]`   | Have the AI agent complete tasks       |
+| `/research <topic> [depth]` | Research a topic (quick/standard/deep) |
+| `/calculate <problem>`      | Solve math problems step by step       |
+
+### Image Generation
+
+| Command                    | Description                    |
+| -------------------------- | ------------------------------ |
+| `/imagine <prompt> [size]` | Generate an image with ComfyUI |
+
+The AI can also respond to @mentions and DMs, using tools autonomously including:
+
+- Web search and deep research (via SearXNG)
+- URL content fetching
+- Mathematical calculations
+- Wikipedia lookups
+- arXiv paper search
+- Time/timezone queries
+- Memory storage and recall
+- Chain-of-thought reasoning
 
 ### Moderation
 
@@ -214,23 +302,13 @@ The container uses `host.docker.internal:11434` to reach Ollama running on your 
 | `/ban <member> [reason] [days]` | Ban a member    | Ban Members     |
 | `/clear <amount>`               | Delete messages | Manage Messages |
 
-### AI
-
-| Command                        | Description                            |
-| ------------------------------ | -------------------------------------- |
-| `/ask <question> [mode]`       | Ask the AI (creative/balanced/precise) |
-| `/summarize [count]`           | Summarize recent messages              |
-| `/translate <text> <language>` | Translate text                         |
-| `/imagine <prompt> [style]`    | Generate an image with AI              |
-
 ### Admin (Owner-only)
 
-| Command               | Description           |
-| --------------------- | --------------------- |
-| `/ai-control status`  | View AI system status |
-| `/ai-control enable`  | Enable AI features    |
-| `/ai-control disable` | Disable AI features   |
-| `/persona set`        | Set bot personality   |
+| Command     | Description                          |
+| ----------- | ------------------------------------ |
+| `/startai`  | Enable AI service and load model     |
+| `/stopai`   | Disable AI and unload model from GPU |
+| `/aistatus` | Detailed AI service status           |
 
 ### Context Menus
 
@@ -245,6 +323,9 @@ The bot uses environment variables and `src/config.ts` for configuration.
 
 ```typescript
 export const config = {
+  bot: {
+    name: process.env.BOT_NAME ?? "Discord Bot",
+  },
   discord: {
     token: process.env.DISCORD_TOKEN ?? "",
     clientId: process.env.DISCORD_CLIENT_ID ?? "",
@@ -253,9 +334,8 @@ export const config = {
   llm: {
     apiUrl: process.env.OLLAMA_HOST ?? "http://ollama:11434",
     model: process.env.LLM_MODEL ?? "...",
+    fallbackModel: process.env.LLM_FALLBACK_MODEL ?? "qwen2.5:7b",
     useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
-    maxTokens: 4096,
-    temperature: 0.7,
   },
   valkey: {
     url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
@@ -283,6 +363,33 @@ Configure MCP servers in `mcp-servers.json`:
   ]
 }
 ```
+
+### Docker MCP Gateway
+
+For MCP servers running in Docker Desktop's MCP Toolkit:
+
+```env
+# Enable Docker MCP Gateway
+DOCKER_MCP_ENABLED=true
+DOCKER_MCP_TRANSPORT=stdio
+
+# Or use HTTP transport (for external gateway)
+DOCKER_MCP_TRANSPORT=http
+DOCKER_MCP_GATEWAY_URL=http://host.docker.internal:8811
+DOCKER_MCP_BEARER_TOKEN=your_token_here
+```
+
+### Environment Variables Reference
+
+See `.env.example` for the complete list of configuration options, including:
+
+- **Discord Configuration** - Bot name, token, client ID, guild IDs
+- **LLM Settings** - Model selection, fallback model, temperature, context length, HERETIC-specific options
+- **Memory System** - Valkey TTL, ChromaDB collection, summarization triggers, relevance thresholds
+- **Security** - Owner/admin/moderator IDs, impersonation detection
+- **GPU/VRAM** - VRAM limits, thresholds, auto-unload settings
+- **Rate Limiting** - Request limits, window duration
+- **Testing** - Test mode, webhook URLs, verbose logging
 
 ## Development
 
@@ -343,7 +450,38 @@ npm run test:all
 | `npm run typecheck`        | Type check without emit           |
 | `npm test`                 | Run integration tests             |
 | `npm run test:integration` | Run integration tests             |
+| `npm run test:security`    | Run security tests                |
+| `npm run test:all`         | Run all tests                     |
+| `npm run test:send`        | Send test message via webhook     |
+| `npm run lint`             | Run ESLint                        |
+| `npm run lint:fix`         | Fix linting issues                |
+| `npm run format`           | Format code with Prettier         |
 | `npm run clean`            | Delete dist folder                |
+
+## Troubleshooting
+
+### Common Issues
+
+**"Failed to connect to OAuth notifications" errors:**
+
+```bash
+docker mcp feature disable mcp-oauth-dcr
+```
+
+This is a known issue with Docker MCP Gateway (GitHub: docker/mcp-gateway#245).
+
+**Bot not responding:**
+
+1. Check that `DISCORD_TOKEN` is valid
+2. Ensure `BOT_OWNER_IDS` includes your Discord user ID
+3. Verify Ollama is running: `curl http://localhost:11434/api/tags`
+4. Check Docker logs: `docker-compose logs -f discord-bot`
+
+**VRAM issues:**
+
+- Reduce `LLM_CONTEXT_LENGTH` (default: 8192)
+- Use a smaller model via `LLM_FALLBACK_MODEL`
+- Enable auto-unload: `GPU_AUTO_UNLOAD_FOR_IMAGES=true`
 
 ## License
 

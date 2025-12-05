@@ -95,14 +95,54 @@ export class ImageService {
   // Concurrency guards for sleep transitions
   private sleepPromise: Promise<void> | null = null;
 
-  // Track failed sleep attempts for retry logic
+  /**
+   * Track consecutive failed sleep attempts for retry logic.
+   *
+   * We use 3 retries with exponential backoff (1s, 2s, 4s delays) which gives:
+   * - Total retry window of ~7 seconds before giving up
+   * - Enough time for transient GPU issues to resolve
+   * - Not so long that users experience significant delays
+   *
+   * This conservative approach ensures we don't falsely mark VRAM as freed
+   * when the GPU is still processing, which would cause OOM errors when
+   * trying to load the next model.
+   */
   private sleepAttemptsFailed = 0;
   private static readonly MAX_SLEEP_RETRIES = 3;
 
-  // VRAM unload verification constants (in bytes)
-  private static readonly MINIMUM_FREED_VRAM_BYTES = 100 * 1024 * 1024; // 100 MB minimum freed
-  private static readonly MINIMAL_USAGE_THRESHOLD_BYTES = 500 * 1024 * 1024; // 500 MB threshold
-  private static readonly VRAM_STABILIZATION_DELAY_MS = 500; // Delay to allow VRAM to stabilize
+  /**
+   * VRAM unload verification constants.
+   *
+   * These thresholds are tuned based on observed ComfyUI behavior:
+   *
+   * MINIMUM_FREED_VRAM_BYTES (100MB): Models typically use 2-8GB VRAM.
+   * If we freed less than 100MB, either no model was loaded or the unload
+   * failed silently. 100MB is a conservative floor that catches real unloads
+   * while ignoring minor VRAM fluctuations from GPU scheduling.
+   *
+   * MINIMAL_USAGE_THRESHOLD_BYTES (500MB): ComfyUI's base overhead is ~200-400MB.
+   * If total usage is under 500MB, no significant models are loaded, so
+   * there's nothing meaningful to unload. This prevents false "unload failed"
+   * warnings when the system is already in a minimal state.
+   *
+   * VRAM_STABILIZATION_DELAY_MS (500ms): GPU memory operations are async.
+   * A brief delay ensures VRAM measurements reflect the true post-unload
+   * state rather than in-flight deallocations.
+   */
+  private static readonly MINIMUM_FREED_VRAM_BYTES = 100 * 1024 * 1024;
+  private static readonly MINIMAL_USAGE_THRESHOLD_BYTES = 500 * 1024 * 1024;
+  private static readonly VRAM_STABILIZATION_DELAY_MS = 500;
+
+  /** Bytes per megabyte for VRAM calculations */
+  private static readonly BYTES_PER_MB = 1024 * 1024;
+
+  /**
+   * Convert bytes to megabytes for readable logging.
+   * Rounds to nearest integer for cleaner output.
+   */
+  private static bytesToMB(bytes: number): number {
+    return Math.round(bytes / ImageService.BYTES_PER_MB);
+  }
 
   constructor() {
     this.baseUrl = config.comfyui.url;
@@ -304,14 +344,24 @@ export class ImageService {
       const afterStatus = await this.getVRAMStatus();
 
       if (afterStatus && beforeStatus) {
-        // Handle edge case where VRAM usage increased between measurements
-        // (could be due to other processes, GPU scheduling, or measurement timing)
-        const freedBytes = Math.max(0, beforeUsed - afterStatus.used);
-        const freedMB = freedBytes / (1024 * 1024);
+        const rawDelta = beforeUsed - afterStatus.used;
+
+        // Detect and log when VRAM usage unexpectedly increased
+        // This can happen due to other GPU processes, driver behavior, or measurement timing
+        if (rawDelta < 0) {
+          log.warn(
+            `VRAM usage increased during unload attempt: before=${ImageService.bytesToMB(beforeUsed)}MB, ` +
+              `after=${ImageService.bytesToMB(afterStatus.used)}MB, delta=${ImageService.bytesToMB(rawDelta)}MB. ` +
+              `This may indicate concurrent GPU activity or measurement timing issues.`
+          );
+        }
+
+        // Clamp to zero to prevent negative "freed" values in downstream logic
+        const freedBytes = Math.max(0, rawDelta);
 
         if (freedBytes >= ImageService.MINIMUM_FREED_VRAM_BYTES) {
           // Freed at least 100MB, consider successful
-          log.info(`ComfyUI models unloaded, freed ${Math.round(freedMB)}MB VRAM`);
+          log.info(`ComfyUI models unloaded, freed ${ImageService.bytesToMB(freedBytes)}MB VRAM`);
           return true;
         } else if (beforeUsed < ImageService.MINIMAL_USAGE_THRESHOLD_BYTES) {
           // Less than 500MB was in use, likely no models were loaded
@@ -320,14 +370,18 @@ export class ImageService {
         } else {
           // Had significant VRAM but didn't free much
           log.warn(
-            `ComfyUI /free completed but only freed ${Math.round(freedMB)}MB (before: ${Math.round(beforeUsed / (1024 * 1024))}MB)`
+            `ComfyUI /free completed but only freed ${ImageService.bytesToMB(freedBytes)}MB ` +
+              `(before: ${ImageService.bytesToMB(beforeUsed)}MB)`
           );
           return false;
         }
       }
 
-      // Couldn't verify VRAM status - return false to trigger retry
-      // This ensures we don't falsely mark as unloaded when verification fails
+      // Couldn't verify VRAM status - return false to trigger retry.
+      // We take a conservative approach here: if we can't confirm VRAM was freed,
+      // we assume it wasn't and retry. This prevents false positives where we mark
+      // the system as "sleeping" while models are still loaded, which would cause
+      // OOM errors when the next model tries to load into already-occupied VRAM.
       log.warn("Could not verify VRAM status after /free call, will retry");
       return false;
     } catch (error) {

@@ -113,9 +113,9 @@ function getServiceConfigs(): ServiceConfig[] {
       optional: false,
     },
     {
-      name: "Qdrant",
-      url: config.qdrant.url,
-      path: "/collections",
+      name: "ChromaDB",
+      url: config.chroma.url,
+      path: "/api/v2/heartbeat",
       optional: true, // Memory system is optional
     },
     {

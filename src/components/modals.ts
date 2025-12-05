@@ -1,10 +1,10 @@
 import {
   type ModalSubmitInteraction,
-  ActionRowBuilder,
   TextInputBuilder,
   TextInputStyle,
   ModalBuilder,
   EmbedBuilder,
+  LabelBuilder,
 } from "discord.js";
 import { Discord, ModalComponent } from "discordx";
 import { AIService } from "../ai/service.js";
@@ -12,7 +12,7 @@ import config from "../config.js";
 
 @Discord()
 export class ModalComponents {
-  private aiService = new AIService();
+  private readonly aiService = new AIService();
 
   /**
    * Feedback modal handler
@@ -103,7 +103,6 @@ export function createFeedbackModal(): ModalBuilder {
 
   const categoryInput = new TextInputBuilder()
     .setCustomId("feedback_category")
-    .setLabel("Category")
     .setPlaceholder("Bug, Feature Request, General, etc.")
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
@@ -111,15 +110,14 @@ export function createFeedbackModal(): ModalBuilder {
 
   const feedbackInput = new TextInputBuilder()
     .setCustomId("feedback_input")
-    .setLabel("Your Feedback")
     .setPlaceholder("Tell us what you think...")
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(2000);
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(categoryInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(feedbackInput)
+  modal.addLabelComponents(
+    new LabelBuilder().setLabel("Category").setTextInputComponent(categoryInput),
+    new LabelBuilder().setLabel("Your Feedback").setTextInputComponent(feedbackInput)
   );
 
   return modal;
@@ -133,7 +131,6 @@ export function createAIPromptModal(): ModalBuilder {
 
   const systemPromptInput = new TextInputBuilder()
     .setCustomId("system_prompt")
-    .setLabel("System Prompt (Optional)")
     .setPlaceholder("You are a helpful assistant...")
     .setStyle(TextInputStyle.Short)
     .setRequired(false)
@@ -141,15 +138,16 @@ export function createAIPromptModal(): ModalBuilder {
 
   const promptInput = new TextInputBuilder()
     .setCustomId("prompt_input")
-    .setLabel("Your Prompt")
     .setPlaceholder("Ask anything...")
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
     .setMaxLength(4000);
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(systemPromptInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(promptInput)
+  modal.addLabelComponents(
+    new LabelBuilder()
+      .setLabel("System Prompt (Optional)")
+      .setTextInputComponent(systemPromptInput),
+    new LabelBuilder().setLabel("Your Prompt").setTextInputComponent(promptInput)
   );
 
   return modal;
@@ -163,7 +161,6 @@ export function createReportModal(): ModalBuilder {
 
   const typeInput = new TextInputBuilder()
     .setCustomId("report_type")
-    .setLabel("Report Type")
     .setPlaceholder("Spam, Harassment, Inappropriate Content, etc.")
     .setStyle(TextInputStyle.Short)
     .setRequired(true)
@@ -171,7 +168,6 @@ export function createReportModal(): ModalBuilder {
 
   const descriptionInput = new TextInputBuilder()
     .setCustomId("report_description")
-    .setLabel("Description")
     .setPlaceholder("Describe the issue in detail...")
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(true)
@@ -179,16 +175,15 @@ export function createReportModal(): ModalBuilder {
 
   const evidenceInput = new TextInputBuilder()
     .setCustomId("report_evidence")
-    .setLabel("Evidence (Optional)")
     .setPlaceholder("Message links, screenshots, etc.")
     .setStyle(TextInputStyle.Paragraph)
     .setRequired(false)
     .setMaxLength(1000);
 
-  modal.addComponents(
-    new ActionRowBuilder<TextInputBuilder>().addComponents(typeInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(descriptionInput),
-    new ActionRowBuilder<TextInputBuilder>().addComponents(evidenceInput)
+  modal.addLabelComponents(
+    new LabelBuilder().setLabel("Report Type").setTextInputComponent(typeInput),
+    new LabelBuilder().setLabel("Description").setTextInputComponent(descriptionInput),
+    new LabelBuilder().setLabel("Evidence (Optional)").setTextInputComponent(evidenceInput)
   );
 
   return modal;

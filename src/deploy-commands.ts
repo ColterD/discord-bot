@@ -1,16 +1,15 @@
 import { dirname, importx } from "@discordx/importer";
 import { REST, Routes } from "discord.js";
-import dotenv from "dotenv";
+import config from "./config.js";
+import { createLogger } from "./utils/logger.js";
 
-dotenv.config();
+const log = createLogger("Deploy");
 
-const token = process.env.DISCORD_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
-const devGuildId = process.env.DEV_GUILD_ID;
-const isProduction = process.env.NODE_ENV === "production";
+const { token, clientId, devGuildId } = config.discord;
+const { isProduction } = config.env;
 
 if (!token || !clientId) {
-  console.error("Missing DISCORD_TOKEN or DISCORD_CLIENT_ID in environment");
+  log.error("Missing DISCORD_TOKEN or DISCORD_CLIENT_ID in configuration");
   process.exit(1);
 }
 
@@ -36,39 +35,39 @@ async function deployCommands(): Promise<void> {
   // Dynamic import to get command metadata
   await importx(`${dirname(import.meta.url)}/commands/**/*.{ts,js}`);
 
-  const rest = new REST().setToken(token!);
+  const rest = new REST().setToken(token);
 
   try {
     if (isProduction) {
       // Global deployment - all servers, up to 1 hour propagation
-      console.log("🌍 Deploying commands globally (production mode)...");
-      console.log("⚠️  Note: Global commands take up to 1 hour to propagate.");
+      log.info("🌍 Deploying commands globally (production mode)...");
+      log.warn("⚠️  Note: Global commands take up to 1 hour to propagate.");
 
-      await rest.put(Routes.applicationCommands(clientId!), {
+      await rest.put(Routes.applicationCommands(clientId), {
         body: [], // Commands will be registered via client.initApplicationCommands()
       });
 
-      console.log("✅ Global commands deployment initiated.");
+      log.info("✅ Global commands deployment initiated.");
     } else {
       // Guild deployment - instant updates for development
       if (!devGuildId) {
-        console.error("DEV_GUILD_ID is required for development mode");
+        log.error("DEV_GUILD_ID is required for development mode");
         process.exit(1);
       }
 
-      console.log(`🏠 Deploying commands to dev guild: ${devGuildId}`);
-      console.log("⚡ Guild commands update instantly.");
+      log.info(`🏠 Deploying commands to dev guild: ${devGuildId}`);
+      log.info("⚡ Guild commands update instantly.");
 
-      await rest.put(Routes.applicationGuildCommands(clientId!, devGuildId), { body: [] });
+      await rest.put(Routes.applicationGuildCommands(clientId, devGuildId), { body: [] });
 
-      console.log("✅ Guild commands deployment initiated.");
+      log.info("✅ Guild commands deployment initiated.");
     }
 
-    console.log("\n📋 Deployment Strategy Summary:");
-    console.log(`   Mode: ${isProduction ? "PRODUCTION (Global)" : "DEVELOPMENT (Guild)"}`);
-    console.log(`   Propagation: ${isProduction ? "Up to 1 hour" : "Instant"}`);
+    log.info("\n📋 Deployment Strategy Summary:");
+    log.info(`   Mode: ${isProduction ? "PRODUCTION (Global)" : "DEVELOPMENT (Guild)"}`);
+    log.info(`   Propagation: ${isProduction ? "Up to 1 hour" : "Instant"}`);
   } catch (error) {
-    console.error("Failed to deploy commands:", error);
+    log.error("Failed to deploy commands:", error);
     process.exit(1);
   }
 }

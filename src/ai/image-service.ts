@@ -5,6 +5,7 @@
 
 import config from "../config.js";
 import { createLogger } from "../utils/logger.js";
+import { getVRAMManager } from "../utils/vram-manager.js";
 
 const log = createLogger("ImageService");
 
@@ -60,18 +61,201 @@ interface QueueStatus {
   pending: number;
 }
 
+// Callback for when image model sleep state changes (for presence updates)
+type ImageSleepStateCallback = (isAsleep: boolean) => void;
+let imageSleepStateCallback: ImageSleepStateCallback | null = null;
+
+/**
+ * Set a callback to be notified when the image model sleep state changes
+ */
+export function onImageSleepStateChange(callback: ImageSleepStateCallback): void {
+  imageSleepStateCallback = callback;
+}
+
 /**
  * ComfyUI Image Service
  * Handles image generation via ComfyUI with Z-Image-Turbo
+ * Supports automatic sleep mode after inactivity
  */
 export class ImageService {
-  private baseUrl: string;
-  private clientId: string;
-  private activeJobs = new Map<string, string>(); // promptId -> userId
+  private readonly baseUrl: string;
+  private readonly clientId: string;
+  private readonly activeJobs = new Map<string, string>(); // promptId -> userId
+
+  // Sleep state management
+  private isAsleep = true; // Start asleep, wake on first request
+  private lastActivityTime: number = Date.now();
+  private sleepInterval: NodeJS.Timeout | null = null;
+  private disposed = false;
+
+  // Concurrency guards for sleep transitions
+  private sleepPromise: Promise<void> | null = null;
 
   constructor() {
     this.baseUrl = config.comfyui.url;
     this.clientId = `discord-bot-${Date.now()}`;
+
+    // Start sleep checker
+    this.startSleepChecker();
+  }
+
+  /**
+   * Clean up background resources
+   */
+  dispose(): void {
+    this.disposed = true;
+    if (this.sleepInterval) {
+      clearInterval(this.sleepInterval);
+      this.sleepInterval = null;
+    }
+  }
+
+  /**
+   * Start the background sleep checker
+   */
+  private startSleepChecker(): void {
+    if (this.sleepInterval) {
+      clearInterval(this.sleepInterval);
+    }
+
+    // Check every 30 seconds if we should put the models to sleep
+    this.sleepInterval = setInterval(() => {
+      if (this.disposed) {
+        return;
+      }
+      void this.checkSleepStatus();
+    }, 30_000);
+  }
+
+  /**
+   * Check if models should be put to sleep due to inactivity
+   */
+  private async checkSleepStatus(): Promise<void> {
+    if (this.isAsleep || this.disposed) return;
+
+    // Don't sleep if there are active jobs
+    if (this.activeJobs.size > 0) {
+      this.updateActivity();
+      return;
+    }
+
+    const inactiveMs = Date.now() - this.lastActivityTime;
+    if (inactiveMs >= config.comfyui.sleepAfterMs) {
+      await this.sleep();
+    }
+  }
+
+  /**
+   * Update last activity time
+   */
+  private updateActivity(): void {
+    this.lastActivityTime = Date.now();
+  }
+
+  /**
+   * Check if the image service is sleeping
+   */
+  isSleeping(): boolean {
+    return this.isAsleep;
+  }
+
+  /**
+   * Put the ComfyUI models to sleep (unload from GPU memory)
+   * Calls the /free endpoint to release VRAM
+   */
+  async sleep(): Promise<void> {
+    if (this.isAsleep || this.disposed) return;
+
+    // Don't sleep if there are active jobs
+    if (this.activeJobs.size > 0) {
+      log.debug("Cannot sleep - active jobs in progress");
+      return;
+    }
+
+    // Coalesce concurrent sleep() calls
+    if (this.sleepPromise) {
+      await this.sleepPromise;
+      return;
+    }
+
+    this.sleepPromise = (async () => {
+      if (this.isAsleep || this.disposed || this.activeJobs.size > 0) {
+        this.sleepPromise = null;
+        return;
+      }
+
+      try {
+        log.info("Putting ComfyUI models to sleep after inactivity...");
+
+        if (config.comfyui.unloadOnSleep) {
+          // Call ComfyUI's /free endpoint to unload models from VRAM
+          // unload_models=true releases model weights, free_memory=true releases cached data
+          const response = await fetch(`${this.baseUrl}/free`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              unload_models: true,
+              free_memory: true,
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (!response.ok) {
+            log.warn(`ComfyUI /free endpoint returned ${response.status}`);
+          }
+        }
+
+        this.isAsleep = true;
+        log.info("ComfyUI models are now sleeping (unloaded from GPU)");
+
+        // Notify VRAM manager
+        const vramManager = getVRAMManager();
+        vramManager.notifyImageModelsUnloaded();
+
+        // Notify listeners (for presence updates)
+        if (imageSleepStateCallback) {
+          imageSleepStateCallback(true);
+        }
+      } catch (error) {
+        log.warn(
+          `Failed to put ComfyUI to sleep: ${error instanceof Error ? error.message : String(error)}`
+        );
+        // Mark as asleep anyway since we tried
+        this.isAsleep = true;
+        if (imageSleepStateCallback) {
+          imageSleepStateCallback(true);
+        }
+      } finally {
+        this.sleepPromise = null;
+      }
+    })();
+
+    await this.sleepPromise;
+  }
+
+  /**
+   * Wake up the ComfyUI service (models will load on first use)
+   */
+  wake(): void {
+    if (!this.isAsleep) {
+      this.updateActivity();
+      return;
+    }
+
+    log.info("Waking up ComfyUI...");
+    this.isAsleep = false;
+    this.updateActivity();
+
+    // Notify VRAM manager
+    const vramManager = getVRAMManager();
+    vramManager.notifyImageModelsLoaded();
+
+    // Notify listeners
+    if (imageSleepStateCallback) {
+      imageSleepStateCallback(false);
+    }
   }
 
   /**
@@ -168,6 +352,7 @@ export class ImageService {
   /**
    * Generate an image from a text prompt
    * Uses Z-Image-Turbo workflow
+   * Coordinates with VRAM manager to ensure GPU memory is available
    */
   async generateImage(
     prompt: string,
@@ -182,6 +367,20 @@ export class ImageService {
     const { width = 1024, height = 1024, steps = 4, seed = -1 } = options;
 
     log.debug(`Image request from ${userId}: ${prompt.slice(0, 50)}...`);
+
+    // Wake up if sleeping (models will load on first use)
+    this.wake();
+
+    // Request VRAM allocation from manager (may unload LLM if configured)
+    const vramManager = getVRAMManager();
+    const vramOk = await vramManager.requestImageGenerationAccess(userId);
+    if (!vramOk) {
+      log.warn(`VRAM manager denied image generation for ${userId} - insufficient memory`);
+      return {
+        success: false,
+        error: "GPU memory is currently in use. Please try again in a moment.",
+      };
+    }
 
     // Check if we can accept the job
     const canAccept = await this.canAcceptJob();
@@ -248,9 +447,15 @@ export class ImageService {
       // Clean up tracking
       this.activeJobs.delete(promptId);
 
+      // Notify VRAM manager that image generation is complete
+      vramManager.notifyImageGenerationComplete(userId);
+
       log.info(`Image generated for user ${userId}`);
       return result;
     } catch (error) {
+      // Make sure to notify VRAM manager even on error
+      vramManager.notifyImageGenerationComplete(userId);
+
       log.error(
         `Image generation failed for user ${userId}`,
         error instanceof Error ? error : undefined
@@ -271,48 +476,53 @@ export class ImageService {
     const pollInterval = 1000; // 1 second
 
     while (Date.now() - startTime < timeout) {
-      try {
-        const historyResponse = await fetch(`${this.baseUrl}/history/${promptId}`, {
-          method: "GET",
-          signal: AbortSignal.timeout(5000),
-        });
-
-        if (!historyResponse.ok) {
-          await this.sleep(pollInterval);
-          continue;
-        }
-
-        const history = (await historyResponse.json()) as HistoryResponse;
-        const promptHistory = history[promptId];
-
-        if (!promptHistory) {
-          await this.sleep(pollInterval);
-          continue;
-        }
-
-        // Check if completed
-        if (promptHistory.status?.completed) {
-          // Find the output image
-          for (const nodeOutput of Object.values(promptHistory.outputs)) {
-            if (nodeOutput.images && nodeOutput.images.length > 0) {
-              const image = nodeOutput.images[0];
-              if (image) {
-                return this.downloadImage(image.filename, image.subfolder, image.type);
-              }
-            }
-          }
-
-          return { success: false, error: "No image in output" };
-        }
-
-        await this.sleep(pollInterval);
-      } catch (_error) {
-        // Continue polling on transient errors
-        await this.sleep(pollInterval);
-      }
+      const result = await this.pollHistory(promptId);
+      if (result) return result;
+      await this.delay(pollInterval);
     }
 
     return { success: false, error: "Generation timed out" };
+  }
+
+  /**
+   * Poll the ComfyUI history for completion status
+   * Returns ImageResult if complete, null if still pending
+   */
+  private async pollHistory(promptId: string): Promise<ImageResult | null> {
+    try {
+      const historyResponse = await fetch(`${this.baseUrl}/history/${promptId}`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if (!historyResponse.ok) return null;
+
+      const history = (await historyResponse.json()) as HistoryResponse;
+      const promptHistory = history[promptId];
+
+      if (!promptHistory?.status?.completed) return null;
+
+      return this.extractImageFromHistory(promptHistory);
+    } catch (error) {
+      // Log transient errors but continue polling
+      log.debug(
+        `Transient polling error for ${promptId}: ${error instanceof Error ? error.message : "Unknown"}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Extract the generated image from completed history
+   */
+  private extractImageFromHistory(promptHistory: HistoryResponse[string]): Promise<ImageResult> {
+    for (const nodeOutput of Object.values(promptHistory.outputs)) {
+      const image = nodeOutput.images?.[0];
+      if (image) {
+        return this.downloadImage(image.filename, image.subfolder, image.type);
+      }
+    }
+    return Promise.resolve({ success: false, error: "No image in output" });
   }
 
   /**
@@ -356,71 +566,101 @@ export class ImageService {
   }
 
   /**
-   * Build a ComfyUI workflow for Z-Image-Turbo
-   * This is a minimal workflow that uses the model efficiently
+   * Build a ComfyUI workflow for Z-Image-Turbo GGUF
+   * Uses GGUF quantized model with separate text encoder and VAE
    */
   private buildWorkflow(
     prompt: string,
     options: { width: number; height: number; steps: number; seed: number }
   ): Record<string, unknown> {
-    // This workflow structure works with Z-Image-Turbo
-    // Minimal nodes for fast generation
+    // Z-Image-Turbo GGUF workflow
+    // Requires: UnetLoaderGGUF, CLIPLoaderGGUF, ModelSamplingAuraFlow
     return {
+      // Load GGUF diffusion model
       "1": {
-        class_type: "CheckpointLoaderSimple",
+        class_type: "UnetLoaderGGUF",
         inputs: {
-          ckpt_name: "z-image-turbo.safetensors", // Z-Image-Turbo model
+          unet_name: "z_image_turbo-Q8_0.gguf",
         },
       },
+      // Load GGUF text encoder (Qwen3-4B)
       "2": {
+        class_type: "CLIPLoaderGGUF",
+        inputs: {
+          clip_name: "Qwen3-4B-UD-Q8_K_XL.gguf",
+          type: "lumina2",
+        },
+      },
+      // Apply AuraFlow sampling (required for Z-Image)
+      "3": {
+        class_type: "ModelSamplingAuraFlow",
+        inputs: {
+          model: ["1", 0],
+          shift: 3,
+        },
+      },
+      // Positive prompt
+      "4": {
         class_type: "CLIPTextEncode",
         inputs: {
-          clip: ["1", 1],
+          clip: ["2", 0],
           text: prompt,
         },
       },
-      "3": {
+      // Negative prompt
+      "5": {
         class_type: "CLIPTextEncode",
         inputs: {
-          clip: ["1", 1],
-          text: "", // Negative prompt (empty for turbo)
+          clip: ["2", 0],
+          text: "blurry ugly bad low quality",
         },
       },
-      "4": {
-        class_type: "EmptyLatentImage",
+      // SD3 latent (required for this architecture)
+      "6": {
+        class_type: "EmptySD3LatentImage",
         inputs: {
-          batch_size: 1,
-          height: options.height,
           width: options.width,
+          height: options.height,
+          batch_size: 1,
         },
       },
-      "5": {
+      // Load VAE
+      "7": {
+        class_type: "VAELoader",
+        inputs: {
+          vae_name: "ae.safetensors",
+        },
+      },
+      // KSampler
+      "8": {
         class_type: "KSampler",
         inputs: {
-          cfg: 1.0, // Low CFG for turbo models
-          denoise: 1.0,
-          latent_image: ["4", 0],
-          model: ["1", 0],
-          negative: ["3", 0],
-          positive: ["2", 0],
-          sampler_name: "euler", // Fast sampler
-          scheduler: "simple",
+          model: ["3", 0],
+          positive: ["4", 0],
+          negative: ["5", 0],
+          latent_image: ["6", 0],
           seed: options.seed,
           steps: options.steps,
+          cfg: 1,
+          sampler_name: "euler",
+          scheduler: "simple",
+          denoise: 1,
         },
       },
-      "6": {
+      // Decode latent to image
+      "9": {
         class_type: "VAEDecode",
         inputs: {
-          samples: ["5", 0],
-          vae: ["1", 2],
+          samples: ["8", 0],
+          vae: ["7", 0],
         },
       },
-      "7": {
+      // Save image
+      "10": {
         class_type: "SaveImage",
         inputs: {
           filename_prefix: "discord",
-          images: ["6", 0],
+          images: ["9", 0],
         },
       },
     };
@@ -432,11 +672,9 @@ export class ImageService {
   private sanitizePrompt(prompt: string): string | null {
     if (!prompt || typeof prompt !== "string") return null;
 
-    // Remove control characters and excessive whitespace
-    const cleaned = prompt
-      .replace(/[\x00-\x1F\x7F]/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    // Remove control characters (U+0000-U+001F and U+007F) and excessive whitespace
+    const controlCharRegex = /[\u0000-\u001F\u007F]/g; // NOSONAR: Regex intentionally matches control characters to remove them
+    const cleaned = prompt.replaceAll(controlCharRegex, "").replaceAll(/\s+/g, " ").trim();
 
     // Check length
     if (cleaned.length < 3 || cleaned.length > 1000) {
@@ -447,9 +685,9 @@ export class ImageService {
   }
 
   /**
-   * Sleep helper
+   * Delay helper for polling
    */
-  private sleep(ms: number): Promise<void> {
+  private delay(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
@@ -489,9 +727,7 @@ export class ImageService {
 let instance: ImageService | null = null;
 
 export function getImageService(): ImageService {
-  if (!instance) {
-    instance = new ImageService();
-  }
+  instance ??= new ImageService();
   return instance;
 }
 
@@ -567,7 +803,7 @@ export async function executeImageGenerationTool(
 
   // Note: negative_prompt is available for future workflow enhancements
   // Currently Z-Image-Turbo doesn't use it directly
-  void args.negative_prompt;
+  // When workflow supports it, use: args.negative_prompt
 
   try {
     // Generate the image
@@ -587,7 +823,7 @@ export async function executeImageGenerationTool(
 
     return {
       success: true,
-      message: `Successfully generated image for: "${args.prompt}"`,
+      message: `Image successfully generated and attached. Prompt used: "${args.prompt}". The image is included with this response - do NOT call generate_image again.`,
       imageBuffer: result.imageBuffer,
       filename: result.filename,
     };

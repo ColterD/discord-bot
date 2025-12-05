@@ -217,13 +217,15 @@ ${memoryContext}`;
    * @param member - Guild member (for permission checks)
    * @param channelId - Channel ID for conversation tracking
    * @param guildId - Guild ID for context
+   * @param onImageGenerationStart - Optional callback when image generation begins
    */
   async chatWithOrchestrator(
     message: string,
     user: User,
     member: GuildMember | null,
     channelId: string,
-    guildId?: string
+    guildId?: string,
+    onImageGenerationStart?: () => Promise<void>
   ): Promise<{
     response: string;
     toolsUsed: string[];
@@ -241,6 +243,7 @@ ${memoryContext}`;
       member,
       channelId,
       guildId: guildId ?? null,
+      ...(onImageGenerationStart && { onImageGenerationStart }),
     });
 
     return {

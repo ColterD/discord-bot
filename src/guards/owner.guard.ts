@@ -49,9 +49,7 @@ function loadConfig(): PermissionConfig {
 let config: PermissionConfig | null = null;
 
 function getConfig(): PermissionConfig {
-  if (!config) {
-    config = loadConfig();
-  }
+  config ??= loadConfig();
   return config;
 }
 

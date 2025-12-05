@@ -3,6 +3,11 @@
  * Manages the Ollama service state (start/stop/status)
  */
 
+import config from "../config.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("AIControl");
+
 interface OllamaStatus {
   running: boolean;
   model: string | null;
@@ -19,8 +24,8 @@ export class AIControlService {
   private manuallyDisabled = false;
 
   constructor() {
-    this.ollamaHost = process.env.OLLAMA_HOST || "http://localhost:11434";
-    this.modelName = process.env.LLM_MODEL || "davidau/openai-gpt-oss-20b-abliterated";
+    this.ollamaHost = config.llm.apiUrl;
+    this.modelName = config.llm.model;
   }
 
   /**
@@ -164,7 +169,7 @@ export class AIControlService {
       const message = error instanceof Error ? error.message : String(error);
       if (!message.includes("ECONNREFUSED")) {
         // Only log unexpected errors
-        console.debug("Unload model error (non-critical):", message);
+        log.debug(`Unload model error (non-critical): ${message}`);
       }
       return {
         success: true,

@@ -11,7 +11,7 @@ A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring
 
 - 🎯 **Slash Commands** - Modern Discord slash commands with decorators
 - 🤖 **AI Integration** - Local LLM support via Ollama (optimized for RTX 4090)
-- 🧠 **ChatGPT-Style Memory** - Three-tier memory system with Valkey persistence
+- 🧠 **ChatGPT-Style Memory** - Three-tier memory system: Active context (Valkey), User profile (ChromaDB), Episodic memory (ChromaDB)
 - 🔧 **Tool Calling** - AI agent with tool execution loop (web search, calculations, image generation)
 - 🔌 **MCP Integration** - Model Context Protocol support for external tools
 - 🛡️ **Security** - Impersonation detection, prompt injection protection, 4-tier tool permissions
@@ -25,9 +25,9 @@ A feature-rich Discord bot built with **discordx** and **TypeScript**, featuring
 
 ### Memory System (Three-Tier)
 
-1. **Active Context** - Current conversation in Valkey with auto-summarization
-2. **User Profile** - Long-term facts via Mem0 semantic memory
-3. **Episodic Memory** - SurrealDB for detailed interaction history
+1. **Active Context** - Current conversation in Valkey with auto-summarization (30 min TTL)
+2. **User Profile** - Long-term facts and preferences via ChromaDB semantic memory
+3. **Episodic Memory** - Relevant past conversations via ChromaDB vector search
 
 ### Tool Permissions (Four-Tier)
 
@@ -61,7 +61,8 @@ src/
 │   ├── image-service.ts  # ComfyUI image generation
 │   └── memory/
 │       ├── memory-manager.ts    # Three-tier memory coordinator
-│       ├── conversation-store.ts # Valkey-backed conversations
+│       ├── conversation-store.ts # Valkey-backed active context
+│       ├── chroma.ts            # ChromaDB vector store for long-term memory
 │       └── session-summarizer.ts # Background summarization
 ├── mcp/
 │   ├── client.ts         # MCP client wrapper
@@ -114,9 +115,9 @@ Edit `.env` with your credentials:
 ```env
 # Discord
 DISCORD_TOKEN=your_bot_token_here
-CLIENT_ID=your_application_client_id
-GUILD_ID=your_development_guild_id
-OWNER_ID=your_discord_user_id
+DISCORD_CLIENT_ID=your_application_client_id
+DEV_GUILD_ID=your_development_guild_id
+BOT_OWNER_IDS=your_discord_user_id
 
 # Environment
 NODE_ENV=development
@@ -244,26 +245,24 @@ The bot uses environment variables and `src/config.ts` for configuration.
 
 ```typescript
 export const config = {
+  discord: {
+    token: process.env.DISCORD_TOKEN ?? "",
+    clientId: process.env.DISCORD_CLIENT_ID ?? "",
+    devGuildId: process.env.DEV_GUILD_ID ?? "",
+  },
   llm: {
     apiUrl: process.env.OLLAMA_HOST ?? "http://ollama:11434",
-    model: process.env.LLM_MODEL ?? "llama3.2",
+    model: process.env.LLM_MODEL ?? "...",
     useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
     maxTokens: 4096,
     temperature: 0.7,
-    repeatPenalty: 1.1,
-  },
-  memory: {
-    conversationTTL: 30 * 60 * 1000, // 30 minutes
-    maxMessagesPerConversation: 50,
-    summarizeAfterMessages: 20,
-    summarizeAfterIdleMs: 10 * 60 * 1000, // 10 minutes
   },
   valkey: {
     url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
-    prefix: "discord-bot:",
+    keyPrefix: "discord-bot:",
   },
   security: {
-    ownerId: process.env.OWNER_ID,
+    ownerIds: (process.env.BOT_OWNER_IDS ?? "").split(",").filter(Boolean),
   },
 };
 ```
@@ -307,13 +306,29 @@ npm test
 # Run integration tests
 npm run test:integration
 
-# Tests cover:
-# - Tool permissions (4-tier system)
-# - Impersonation detection
-# - Security utilities
-# - Tool definitions
-# - Cache operations
+# Run security tests
+npm run test:security
+
+# Run all tests
+npm run test:all
 ```
+
+### Test Coverage
+
+**Integration Tests:**
+- Tool permissions (4-tier system)
+- Impersonation detection
+- Security utilities
+- Tool definitions
+- Cache operations
+
+**Security Tests:**
+- Tool request validation (path traversal, command injection, SQL injection)
+- URL safety checks (private IP blocking, protocol validation)
+- Memory isolation (user ID validation)
+- Input sanitization (PII detection, prompt injection)
+- LLM output validation (token leak detection, webhook URL blocking)
+- Tool call parsing security (malformed JSON handling, DoS prevention)
 
 ## Scripts
 

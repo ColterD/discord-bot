@@ -2,7 +2,7 @@
   "name": "discord-bot",
   "version": "1.0.0",
   "description": "A TypeScript Discord bot with AI integration using discordx",
-  "license": "MIT",
+  "license": "ISC",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
@@ -17,6 +17,9 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/integration/orchestrator.test.ts",
     "test:integration": "tsx tests/integration/orchestrator.test.ts",
+    "test:security": "tsx tests/integration/security.test.ts",
+    "test:all": "tsx tests/integration/orchestrator.test.ts && tsx tests/integration/security.test.ts",
+    "test:send": "tsx tests/send-test-message.ts",
     "prepare": "node -e \"console.log('Run: pip install pre-commit && pre-commit install')\" || exit 0"
   },
   "keywords": [
@@ -27,26 +30,26 @@
     "ai"
   ],
   "author": "",
-  "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@chroma-core/ollama": "^0.1.8",
     "@discordx/importer": "^1.3.3",
     "@discordx/pagination": "^4.4.0",
     "@discordx/utilities": "^8.0.0",
     "@modelcontextprotocol/sdk": "^1.24.2",
     "axios": "^1.13.2",
+    "chromadb": "^3.1.6",
     "discord.js": "^14.25.1",
     "discordx": "^11.13.2",
+    "dompurify": "^3.3.0",
     "dotenv": "^17.2.3",
     "fast-xml-parser": "^5.3.2",
     "glob": "^13.0.0",
     "iovalkey": "^0.3.1",
+    "jsdom": "^27.2.0",
     "mathjs": "^15.1.0",
-    "mem0ai": "^2.1.38",
     "reflect-metadata": "^0.2.2",
-    "zod": "^4.1.13",
-    "dompurify": "^3.3.0",
-    "jsdom": "^27.2.0"
+    "zod": "^4.1.13"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -56,17 +59,10 @@
     "del-cli": "^6.0.0",
     "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
     "prettier": "^3.7.4",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.48.1"
-  },
-  "overrides": {
-    "mem0ai": {
-      "axios": "^1.13.2",
-      "@qdrant/js-client-rest": {
-        "undici": "^6.21.0"
-      }
-    }
   }
 }

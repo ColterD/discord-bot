@@ -1,10 +1,14 @@
 /**
  * MCP Client Manager
  * Manages connections to MCP servers using the official SDK
+ * Supports both stdio transport (local servers) and HTTP transport (Docker MCP Gateway)
+ *
+ * Uses StreamableHTTPClientTransport for HTTP connections (MCP protocol 2025-03-26+)
  */
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod/v4";
 import { readFile } from "node:fs/promises";
 import { config } from "../config.js";
@@ -44,12 +48,15 @@ export interface McpTool {
   inputSchema: Record<string, unknown>;
   serverName: string;
   permissions: "public" | "owner-only" | "admin-only";
+  /** Source of the tool (local stdio server or Docker MCP Gateway) */
+  source: "stdio" | "docker-gateway";
 }
 
 /**
- * MCP Server connection
+ * MCP Server connection (stdio-based)
  */
-interface McpConnection {
+interface McpStdioConnection {
+  type: "stdio";
   client: Client;
   transport: StdioClientTransport;
   serverName: string;
@@ -59,11 +66,27 @@ interface McpConnection {
 }
 
 /**
+ * Docker MCP Gateway connection
+ * Supports both stdio (recommended) and StreamableHTTP transports
+ */
+interface McpGatewayConnection {
+  type: "docker-gateway";
+  transportType: "stdio" | "streamable-http";
+  client: Client;
+  transport: StdioClientTransport | StreamableHTTPClientTransport;
+  url?: string; // Only for HTTP transports
+  connected: boolean;
+  tools: McpTool[];
+  reconnectAttempts: number;
+}
+
+/**
  * MCP Client Manager - singleton
  */
 export class McpClientManager {
   private static instance: McpClientManager | null = null;
-  private readonly connections = new Map<string, McpConnection>();
+  private readonly stdioConnections = new Map<string, McpStdioConnection>();
+  private gatewayConnection: McpGatewayConnection | null = null;
   private readonly configPath: string;
   private initialized = false;
 
@@ -83,23 +106,29 @@ export class McpClientManager {
     if (this.initialized) return;
 
     try {
+      // Initialize stdio-based MCP servers from config file
       const mcpConfig = await this.loadConfig();
-
       for (const [serverName, serverConfig] of Object.entries(mcpConfig.mcpServers)) {
         try {
-          await this.connectToServer(serverName, serverConfig);
+          await this.connectToStdioServer(serverName, serverConfig);
         } catch (error) {
           log.error(
             `Failed to connect to MCP server ${serverName}: ` +
               (error instanceof Error ? error.message : String(error)),
             error
           );
-          // Continue with other servers
         }
       }
 
+      // Initialize Docker MCP Gateway if enabled
+      if (config.mcp.dockerGateway.enabled) {
+        await this.connectToDockerGateway();
+      }
+
       this.initialized = true;
-      log.info(`Initialized with ${this.connections.size} MCP server(s) connected`);
+      const stdioCount = this.stdioConnections.size;
+      const gatewayStatus = this.gatewayConnection?.connected ? " + Docker MCP Gateway" : "";
+      log.info(`MCP initialized: ${stdioCount} stdio server(s)${gatewayStatus}`);
     } catch (error) {
       log.error(
         "Failed to initialize MCP client manager: " +
@@ -110,12 +139,195 @@ export class McpClientManager {
   }
 
   /**
+   * Connect to Docker MCP Gateway
+   * Supports both stdio (recommended) and HTTP transports
+   */
+  private async connectToDockerGateway(): Promise<void> {
+    const gatewayConfig = config.mcp.dockerGateway;
+    const transportType = gatewayConfig.transport;
+
+    log.info(`Connecting to Docker MCP Gateway via ${transportType.toUpperCase()} transport...`);
+
+    try {
+      if (transportType === "stdio") {
+        await this.connectToDockerGatewayStdio();
+      } else {
+        await this.connectToDockerGatewayHttp();
+      }
+    } catch (error) {
+      log.warn(
+        `Failed to connect to Docker MCP Gateway (${transportType}): ${error instanceof Error ? error.message : String(error)}`
+      );
+      this.gatewayConnection = null;
+    }
+  }
+
+  /**
+   * Connect to Docker MCP Gateway using stdio transport (recommended)
+   * Spawns `docker mcp gateway run` as a child process
+   */
+  private async connectToDockerGatewayStdio(): Promise<void> {
+    // Create stdio transport that spawns the gateway process
+    // The gateway communicates via stdin/stdout using JSON-RPC over MCP protocol
+    const transport = new StdioClientTransport({
+      command: "docker",
+      args: ["mcp", "gateway", "run"],
+      // Pass through environment variables
+      env: { ...process.env } as Record<string, string>,
+    });
+
+    const client = new Client(
+      {
+        name: "discord-bot",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {},
+      }
+    );
+
+    // Connect with timeout
+    const connectPromise = client.connect(transport);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("Docker MCP Gateway connection timeout (stdio)"));
+      }, config.mcp.connectionTimeoutMs);
+    });
+
+    await Promise.race([connectPromise, timeoutPromise]);
+
+    // Get tools from gateway
+    const toolsResult = await client.listTools();
+    const tools: McpTool[] = toolsResult.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
+      serverName: "docker-gateway",
+      permissions: "public" as const,
+      source: "docker-gateway" as const,
+    }));
+
+    this.gatewayConnection = {
+      type: "docker-gateway",
+      transportType: "stdio",
+      client,
+      transport,
+      connected: true,
+      tools,
+      reconnectAttempts: 0,
+    };
+
+    log.info(`Connected to Docker MCP Gateway (stdio) with ${tools.length} tool(s)`);
+  }
+
+  /**
+   * Connect to Docker MCP Gateway using StreamableHTTP transport
+   */
+  private async connectToDockerGatewayHttp(): Promise<void> {
+    const gatewayConfig = config.mcp.dockerGateway;
+    const fullUrl = `${gatewayConfig.url}${gatewayConfig.endpoint}`;
+
+    log.info(`Connecting to Docker MCP Gateway at ${fullUrl}...`);
+
+    const transport = new StreamableHTTPClientTransport(new URL(fullUrl), {
+      requestInit: {
+        headers: {
+          Authorization: `Bearer ${gatewayConfig.bearerToken}`,
+        },
+      },
+    });
+
+    const client = new Client(
+      {
+        name: "discord-bot",
+        version: "1.0.0",
+      },
+      {
+        capabilities: {},
+      }
+    );
+
+    // Connect with timeout
+    // Cast transport to satisfy exactOptionalPropertyTypes
+    const connectPromise = client.connect(
+      transport as unknown as Parameters<typeof client.connect>[0]
+    );
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error("Docker MCP Gateway connection timeout"));
+      }, config.mcp.connectionTimeoutMs);
+    });
+
+    await Promise.race([connectPromise, timeoutPromise]);
+
+    // Get tools from gateway
+    const toolsResult = await client.listTools();
+    const tools: McpTool[] = toolsResult.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description ?? "",
+      inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
+      serverName: "docker-gateway",
+      permissions: "public" as const,
+      source: "docker-gateway" as const,
+    }));
+
+    this.gatewayConnection = {
+      type: "docker-gateway",
+      transportType: "streamable-http",
+      client,
+      transport,
+      url: fullUrl,
+      connected: true,
+      tools,
+      reconnectAttempts: 0,
+    };
+
+    log.info(`Connected to Docker MCP Gateway with ${tools.length} tool(s)`);
+  }
+
+  /**
+   * Attempt to reconnect to Docker MCP Gateway
+   */
+  async reconnectDockerGateway(): Promise<boolean> {
+    if (!config.mcp.dockerGateway.enabled) return false;
+
+    const maxAttempts = config.mcp.dockerGateway.maxReconnectAttempts;
+    const attempts = this.gatewayConnection?.reconnectAttempts ?? 0;
+
+    if (attempts >= maxAttempts) {
+      log.warn(`Docker MCP Gateway reconnection limit reached (${maxAttempts} attempts)`);
+      return false;
+    }
+
+    log.info(
+      `Attempting to reconnect to Docker MCP Gateway (attempt ${attempts + 1}/${maxAttempts})...`
+    );
+
+    // Disconnect existing connection if any
+    if (this.gatewayConnection?.connected) {
+      try {
+        await this.gatewayConnection.client.close();
+      } catch {
+        // Ignore close errors
+      }
+    }
+
+    await this.connectToDockerGateway();
+
+    if (this.gatewayConnection) {
+      this.gatewayConnection.reconnectAttempts = attempts + 1;
+    }
+
+    return this.gatewayConnection?.connected ?? false;
+  }
+
+  /**
    * Load MCP configuration from file
    */
   private async loadConfig(): Promise<McpConfig> {
     try {
       const configContent = await readFile(this.configPath, "utf-8");
-      const parsed = JSON.parse(configContent);
+      const parsed = JSON.parse(configContent) as unknown;
 
       // Expand environment variables in the config
       const expanded = this.expandEnvVars(parsed);
@@ -135,7 +347,7 @@ export class McpClientManager {
    */
   private expandEnvVars(obj: unknown): unknown {
     if (typeof obj === "string") {
-      return obj.replaceAll(/\$\{([^}]+)\}/g, (_, envVar) => {
+      return obj.replaceAll(/\$\{([^}]+)\}/g, (_, envVar: string) => {
         return process.env[envVar] ?? "";
       });
     }
@@ -153,9 +365,12 @@ export class McpClientManager {
   }
 
   /**
-   * Connect to a single MCP server
+   * Connect to a single stdio-based MCP server
    */
-  private async connectToServer(serverName: string, serverConfig: McpServerConfig): Promise<void> {
+  private async connectToStdioServer(
+    serverName: string,
+    serverConfig: McpServerConfig
+  ): Promise<void> {
     log.debug(`Connecting to MCP server: ${serverName}`);
 
     // Prepare environment
@@ -202,9 +417,11 @@ export class McpClientManager {
       inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
       serverName,
       permissions: serverConfig.metadata?.permissions ?? "public",
+      source: "stdio" as const,
     }));
 
-    const connection: McpConnection = {
+    const connection: McpStdioConnection = {
+      type: "stdio",
       client,
       transport,
       serverName,
@@ -213,21 +430,44 @@ export class McpClientManager {
       tools,
     };
 
-    this.connections.set(serverName, connection);
+    this.stdioConnections.set(serverName, connection);
     log.info(`Connected to MCP server ${serverName} with ${tools.length} tool(s)`);
   }
 
   /**
-   * Get all available tools across all connected servers
+   * Get all available tools across all connected servers (stdio + gateway)
    */
   getAllTools(): McpTool[] {
     const tools: McpTool[] = [];
-    for (const connection of this.connections.values()) {
+
+    // Add tools from stdio connections
+    for (const connection of this.stdioConnections.values()) {
       if (connection.connected) {
         tools.push(...connection.tools);
       }
     }
+
+    // Add tools from Docker MCP Gateway
+    if (this.gatewayConnection?.connected) {
+      tools.push(...this.gatewayConnection.tools);
+    }
+
     return tools;
+  }
+
+  /**
+   * Get tools from Docker MCP Gateway only
+   */
+  getDockerGatewayTools(): McpTool[] {
+    if (!this.gatewayConnection?.connected) return [];
+    return [...this.gatewayConnection.tools];
+  }
+
+  /**
+   * Check if Docker MCP Gateway is connected
+   */
+  isDockerGatewayConnected(): boolean {
+    return this.gatewayConnection?.connected ?? false;
   }
 
   /**
@@ -251,27 +491,95 @@ export class McpClientManager {
   }
 
   /**
-   * Call a tool on an MCP server
+   * Call a tool on an MCP server (auto-routes to correct connection)
    */
-  async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
-    // Find which server has this tool
-    for (const connection of this.connections.values()) {
-      const tool = connection.tools.find((t) => t.name === toolName);
+  /**
+   * Find connection that has a specific tool
+   */
+  private findStdioConnectionForTool(
+    toolName: string
+  ): { connection: McpStdioConnection; tool: McpTool } | null {
+    for (const connection of this.stdioConnections.values()) {
+      const tool = connection.tools.find((t: McpTool) => t.name === toolName);
       if (tool && connection.connected) {
-        try {
-          const result = await connection.client.callTool({
+        return { connection, tool };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Call a tool via stdio connection
+   */
+  private async callStdioTool(
+    connection: McpStdioConnection,
+    toolName: string,
+    args: Record<string, unknown>
+  ): Promise<unknown> {
+    try {
+      return await connection.client.callTool({
+        name: toolName,
+        arguments: args,
+      });
+    } catch (error) {
+      log.error(
+        `Failed to call tool ${toolName}: ` +
+          (error instanceof Error ? error.message : String(error)),
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Call a tool via Docker MCP Gateway with reconnection support
+   */
+  private async callGatewayTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    if (!this.gatewayConnection) {
+      throw new Error("Docker Gateway not connected");
+    }
+
+    try {
+      return await this.gatewayConnection.client.callTool({
+        name: toolName,
+        arguments: args,
+      });
+    } catch (error) {
+      log.error(
+        `Failed to call Docker Gateway tool ${toolName}: ` +
+          (error instanceof Error ? error.message : String(error)),
+        error
+      );
+
+      // Attempt reconnection if auto-reconnect is enabled
+      if (config.mcp.dockerGateway.autoReconnect && this.gatewayConnection) {
+        const reconnected = await this.reconnectDockerGateway();
+        if (reconnected && this.gatewayConnection) {
+          return this.gatewayConnection.client.callTool({
             name: toolName,
             arguments: args,
           });
-          return result;
-        } catch (error) {
-          log.error(
-            `Failed to call tool ${toolName}: ` +
-              (error instanceof Error ? error.message : String(error)),
-            error
-          );
-          throw error;
         }
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Call a tool by name
+   */
+  async callTool(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    // First check stdio connections
+    const stdioMatch = this.findStdioConnectionForTool(toolName);
+    if (stdioMatch) {
+      return this.callStdioTool(stdioMatch.connection, toolName, args);
+    }
+
+    // Then check Docker MCP Gateway
+    if (this.gatewayConnection?.connected) {
+      const tool = this.gatewayConnection.tools.find((t: McpTool) => t.name === toolName);
+      if (tool) {
+        return this.callGatewayTool(toolName, args);
       }
     }
 
@@ -282,11 +590,20 @@ export class McpClientManager {
    * Check if a tool exists
    */
   hasTool(toolName: string): boolean {
-    for (const connection of this.connections.values()) {
-      if (connection.tools.some((t) => t.name === toolName)) {
+    // Check stdio connections
+    for (const connection of this.stdioConnections.values()) {
+      if (connection.tools.some((t: McpTool) => t.name === toolName)) {
         return true;
       }
     }
+
+    // Check Docker MCP Gateway
+    if (this.gatewayConnection?.connected) {
+      if (this.gatewayConnection.tools.some((t: McpTool) => t.name === toolName)) {
+        return true;
+      }
+    }
+
     return false;
   }
 
@@ -294,10 +611,18 @@ export class McpClientManager {
    * Get tool by name
    */
   getTool(toolName: string): McpTool | undefined {
-    for (const connection of this.connections.values()) {
-      const tool = connection.tools.find((t) => t.name === toolName);
+    // Check stdio connections first
+    for (const connection of this.stdioConnections.values()) {
+      const tool = connection.tools.find((t: McpTool) => t.name === toolName);
       if (tool) return tool;
     }
+
+    // Then check Docker MCP Gateway
+    if (this.gatewayConnection?.connected) {
+      const tool = this.gatewayConnection.tools.find((t: McpTool) => t.name === toolName);
+      if (tool) return tool;
+    }
+
     return undefined;
   }
 
@@ -305,7 +630,8 @@ export class McpClientManager {
    * Disconnect from all servers
    */
   async shutdown(): Promise<void> {
-    for (const [serverName, connection] of this.connections) {
+    // Shutdown stdio connections
+    for (const [serverName, connection] of this.stdioConnections) {
       try {
         await connection.client.close();
         connection.connected = false;
@@ -318,19 +644,88 @@ export class McpClientManager {
         );
       }
     }
-    this.connections.clear();
+    this.stdioConnections.clear();
+
+    // Shutdown Docker MCP Gateway
+    if (this.gatewayConnection) {
+      try {
+        await this.gatewayConnection.client.close();
+        this.gatewayConnection.connected = false;
+        log.debug("Disconnected from Docker MCP Gateway");
+      } catch (error) {
+        log.error(
+          `Error disconnecting from Docker MCP Gateway: ` +
+            (error instanceof Error ? error.message : String(error)),
+          error
+        );
+      }
+    }
+
     this.initialized = false;
   }
 
   /**
    * Get connection status
    */
-  getStatus(): { serverName: string; connected: boolean; toolCount: number }[] {
-    return Array.from(this.connections.values()).map((conn) => ({
-      serverName: conn.serverName,
-      connected: conn.connected,
-      toolCount: conn.tools.length,
-    }));
+  getStatus(): { serverName: string; connected: boolean; toolCount: number; source: string }[] {
+    const status: { serverName: string; connected: boolean; toolCount: number; source: string }[] =
+      [];
+
+    // Stdio connections
+    for (const conn of this.stdioConnections.values()) {
+      status.push({
+        serverName: conn.serverName,
+        connected: conn.connected,
+        toolCount: conn.tools.length,
+        source: "stdio",
+      });
+    }
+
+    // Docker MCP Gateway
+    if (this.gatewayConnection) {
+      status.push({
+        serverName: "docker-gateway",
+        connected: this.gatewayConnection.connected,
+        toolCount: this.gatewayConnection.tools.length,
+        source: "docker-gateway",
+      });
+    }
+
+    return status;
+  }
+
+  /**
+   * Refresh tools from Docker MCP Gateway
+   * Useful when new MCP servers are enabled in Docker Desktop
+   */
+  async refreshDockerGatewayTools(): Promise<McpTool[]> {
+    if (!this.gatewayConnection?.connected) {
+      throw new Error("Docker MCP Gateway is not connected");
+    }
+
+    try {
+      const toolsResult = await this.gatewayConnection.client.listTools();
+      const tools: McpTool[] = toolsResult.tools.map((tool) => ({
+        name: tool.name,
+        description: tool.description ?? "",
+        inputSchema: (tool.inputSchema as Record<string, unknown>) ?? {},
+        serverName: "docker-gateway",
+        permissions: "public" as const,
+        source: "docker-gateway" as const,
+      }));
+
+      this.gatewayConnection.tools = tools;
+      log.info(`Refreshed Docker MCP Gateway tools: ${tools.length} tool(s) available`);
+
+      return tools;
+    } catch (error) {
+      log.error(
+        `Failed to refresh Docker MCP Gateway tools: ` +
+          (error instanceof Error ? error.message : String(error)),
+        error
+      );
+      throw error;
+    }
   }
 }
 

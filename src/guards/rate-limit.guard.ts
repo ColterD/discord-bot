@@ -75,7 +75,9 @@ export function RateLimitGuard(
 /**
  * Clean up expired rate limit entries periodically
  */
-setInterval(() => {
+let cleanupInterval: NodeJS.Timeout | null = null;
+
+cleanupInterval = setInterval(() => {
   const now = Date.now();
   const windowMs = 60000; // Default window
 
@@ -86,5 +88,16 @@ setInterval(() => {
     }
   });
 }, 60000); // Run every minute
+
+/**
+ * Clean up the rate limit guard interval
+ * Should be called during application shutdown
+ */
+export function cleanupRateLimitGuard(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+}
 
 export default RateLimitGuard;

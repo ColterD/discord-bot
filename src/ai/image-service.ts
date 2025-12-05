@@ -209,9 +209,7 @@ export class ImageService {
     try {
       log.info("Putting ComfyUI models to sleep after inactivity...");
 
-      const unloadSucceeded = config.comfyui.unloadOnSleep
-        ? await this.attemptModelUnload()
-        : true;
+      const unloadSucceeded = config.comfyui.unloadOnSleep ? await this.attemptModelUnload() : true;
 
       if (unloadSucceeded) {
         this.handleSleepSuccess();
@@ -300,9 +298,7 @@ export class ImageService {
       }
 
       // Small delay to allow VRAM to stabilize
-      await new Promise((resolve) =>
-        setTimeout(resolve, ImageService.VRAM_STABILIZATION_DELAY_MS)
-      );
+      await new Promise((resolve) => setTimeout(resolve, ImageService.VRAM_STABILIZATION_DELAY_MS));
 
       // Verify that VRAM was actually freed
       const afterStatus = await this.getVRAMStatus();

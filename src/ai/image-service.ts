@@ -192,75 +192,82 @@ export class ImageService {
       return;
     }
 
-    this.sleepPromise = (async () => {
-      if (this.isAsleep || this.disposed || this.activeJobs.size > 0) {
-        this.sleepPromise = null;
-        return;
-      }
-
-      try {
-        log.info("Putting ComfyUI models to sleep after inactivity...");
-
-        let unloadSucceeded = true;
-
-        if (config.comfyui.unloadOnSleep) {
-          unloadSucceeded = await this.attemptModelUnload();
-        }
-
-        if (unloadSucceeded) {
-          // Only mark as asleep if unload actually succeeded
-          this.isAsleep = true;
-          this.sleepAttemptsFailed = 0;
-          log.info("ComfyUI models are now sleeping (unloaded from GPU)");
-
-          // Notify VRAM manager
-          const vramManager = getVRAMManager();
-          vramManager.notifyImageModelsUnloaded();
-
-          // Notify listeners (for presence updates)
-          if (imageSleepStateCallback) {
-            imageSleepStateCallback(true);
-          }
-        } else {
-          // Unload failed - will retry on next interval
-          this.sleepAttemptsFailed++;
-          if (this.sleepAttemptsFailed >= ImageService.MAX_SLEEP_RETRIES) {
-            log.warn(
-              `Failed to unload ComfyUI models after ${ImageService.MAX_SLEEP_RETRIES} attempts, marking as asleep anyway`
-            );
-            // After max retries, mark as asleep to prevent infinite retries
-            // but models may still be in VRAM
-            this.isAsleep = true;
-            this.sleepAttemptsFailed = 0;
-            if (imageSleepStateCallback) {
-              imageSleepStateCallback(true);
-            }
-          } else {
-            log.info(
-              `Unload failed (attempt ${this.sleepAttemptsFailed}/${ImageService.MAX_SLEEP_RETRIES}), will retry on next interval`
-            );
-          }
-        }
-      } catch (error) {
-        log.warn(
-          `Failed to put ComfyUI to sleep: ${error instanceof Error ? error.message : String(error)}`
-        );
-        // Track failed attempt for retry logic
-        this.sleepAttemptsFailed++;
-        if (this.sleepAttemptsFailed >= ImageService.MAX_SLEEP_RETRIES) {
-          // After max retries, mark as asleep to prevent infinite retries
-          this.isAsleep = true;
-          this.sleepAttemptsFailed = 0;
-          if (imageSleepStateCallback) {
-            imageSleepStateCallback(true);
-          }
-        }
-      } finally {
-        this.sleepPromise = null;
-      }
-    })();
-
+    this.sleepPromise = this.performSleepTransition();
     await this.sleepPromise;
+  }
+
+  /**
+   * Internal method to perform the sleep transition
+   * Separated to reduce cognitive complexity
+   */
+  private async performSleepTransition(): Promise<void> {
+    if (this.isAsleep || this.disposed || this.activeJobs.size > 0) {
+      this.sleepPromise = null;
+      return;
+    }
+
+    try {
+      log.info("Putting ComfyUI models to sleep after inactivity...");
+
+      const unloadSucceeded = config.comfyui.unloadOnSleep
+        ? await this.attemptModelUnload()
+        : true;
+
+      if (unloadSucceeded) {
+        this.handleSleepSuccess();
+      } else {
+        this.handleSleepFailure();
+      }
+    } catch (error) {
+      log.warn(
+        `Failed to put ComfyUI to sleep: ${error instanceof Error ? error.message : String(error)}`
+      );
+      this.handleSleepFailure();
+    } finally {
+      this.sleepPromise = null;
+    }
+  }
+
+  /**
+   * Handle successful sleep transition
+   */
+  private handleSleepSuccess(): void {
+    this.isAsleep = true;
+    this.sleepAttemptsFailed = 0;
+    log.info("ComfyUI models are now sleeping (unloaded from GPU)");
+
+    // Notify VRAM manager
+    const vramManager = getVRAMManager();
+    vramManager.notifyImageModelsUnloaded();
+
+    // Notify listeners (for presence updates)
+    if (imageSleepStateCallback) {
+      imageSleepStateCallback(true);
+    }
+  }
+
+  /**
+   * Handle failed sleep transition with retry logic
+   */
+  private handleSleepFailure(): void {
+    this.sleepAttemptsFailed++;
+
+    if (this.sleepAttemptsFailed >= ImageService.MAX_SLEEP_RETRIES) {
+      log.warn(
+        `Failed to unload ComfyUI models after ${ImageService.MAX_SLEEP_RETRIES} attempts, marking as asleep anyway`
+      );
+      // After max retries, mark as asleep to prevent infinite retries
+      // but models may still be in VRAM
+      this.isAsleep = true;
+      this.sleepAttemptsFailed = 0;
+      if (imageSleepStateCallback) {
+        imageSleepStateCallback(true);
+      }
+    } else {
+      log.info(
+        `Unload failed (attempt ${this.sleepAttemptsFailed}/${ImageService.MAX_SLEEP_RETRIES}), will retry on next interval`
+      );
+    }
   }
 
   /**

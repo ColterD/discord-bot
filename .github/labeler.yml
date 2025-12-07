@@ -1,0 +1,68 @@
+# PR Labeler configuration
+# Labels PRs based on which files are changed
+
+ai:
+  - changed-files:
+      - any-glob-to-any-file: "src/ai/**/*"
+
+commands:
+  - changed-files:
+      - any-glob-to-any-file: "src/commands/**/*"
+
+components:
+  - changed-files:
+      - any-glob-to-any-file: "src/components/**/*"
+
+events:
+  - changed-files:
+      - any-glob-to-any-file: "src/events/**/*"
+
+guards:
+  - changed-files:
+      - any-glob-to-any-file: "src/guards/**/*"
+
+mcp:
+  - changed-files:
+      - any-glob-to-any-file: "src/mcp/**/*"
+
+security:
+  - changed-files:
+      - any-glob-to-any-file: "src/security/**/*"
+
+services:
+  - changed-files:
+      - any-glob-to-any-file: "src/services/**/*"
+
+utils:
+  - changed-files:
+      - any-glob-to-any-file: "src/utils/**/*"
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: "tests/**/*"
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**/*"
+
+docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Dockerfile"
+          - "docker-compose*.yml"
+          - ".dockerignore"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.md"
+          - "docs/**/*"
+
+config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.json"
+          - "*.yml"
+          - "*.yaml"
+          - "!package*.json"
+          - "!.github/**/*"

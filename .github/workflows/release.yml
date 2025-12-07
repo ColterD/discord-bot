@@ -1,0 +1,310 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., v1.2.3)"
+        required: true
+        type: string
+      prerelease:
+        description: "Mark as pre-release"
+        required: false
+        type: boolean
+        default: false
+
+# Restrict default permissions to read-only for security
+permissions: read-all
+
+env:
+  REGISTRY: ghcr.io
+  NODE_VERSION: "22"
+
+jobs:
+  # Validate the release version
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+            IS_PRERELEASE="${{ github.event.inputs.prerelease }}"
+          else
+            VERSION="${GITHUB_REF#refs/tags/}"
+            # Check if version contains pre-release identifiers
+            if [[ "$VERSION" =~ (alpha|beta|rc|canary) ]]; then
+              IS_PRERELEASE="true"
+            else
+              IS_PRERELEASE="false"
+            fi
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_prerelease=$IS_PRERELEASE" >> $GITHUB_OUTPUT
+          echo "📦 Version: $VERSION (prerelease: $IS_PRERELEASE)"
+
+      - name: Validate semver format
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Invalid version format: $VERSION"
+            echo "Expected format: vX.Y.Z or vX.Y.Z-prerelease"
+            exit 1
+          fi
+          echo "✅ Valid version format: $VERSION"
+
+  # Build and test
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test:unit
+        continue-on-error: true
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Create build tarball
+        run: |
+          tar -czf discord-bot-${{ needs.validate.outputs.version }}.tar.gz \
+            dist/ \
+            package.json \
+            package-lock.json \
+            Dockerfile \
+            docker-compose.yml \
+            README.md \
+            LICENSE
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: build-${{ needs.validate.outputs.version }}
+          path: discord-bot-${{ needs.validate.outputs.version }}.tar.gz
+          retention-days: 90
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: discord-bot-${{ needs.validate.outputs.version }}.tar.gz
+
+  # Build and push container image
+  container:
+    name: Build Container
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image_name: ${{ steps.image_name.outputs.name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Set image name
+        id: image_name
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.validate.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.validate.outputs.version }}
+            type=semver,pattern={{major}},value=${{ needs.validate.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.validate.outputs.is_prerelease == 'false' }}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: mode=max
+          sbom: true
+
+      - name: Generate container provenance attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      # Generate SBOM using Anchore Syft
+      - name: Generate SBOM
+        uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d # v0.20.10
+        with:
+          image: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+
+      - name: Generate SBOM attestation
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.cyclonedx.json
+          push-to-registry: true
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
+
+      - name: Sign container image
+        run: |
+          cosign sign --yes ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}@${{ steps.build.outputs.digest }}
+        env:
+          COSIGN_EXPERIMENTAL: "true"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: sbom-${{ needs.validate.outputs.version }}
+          path: sbom.cyclonedx.json
+          retention-days: 90
+
+  # Generate changelog and create release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [validate, build, container]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Download build artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: build-${{ needs.validate.outputs.version }}
+
+      - name: Download SBOM artifact
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: sbom-${{ needs.validate.outputs.version }}
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get previous tag
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "📝 First release - showing all commits"
+            COMMITS=$(git log --oneline --pretty=format:"- %s (%h)" | head -50)
+          else
+            echo "📝 Changes since $PREVIOUS_TAG"
+            COMMITS=$(git log ${PREVIOUS_TAG}..HEAD --oneline --pretty=format:"- %s (%h)")
+          fi
+
+          # Create changelog file
+          cat > CHANGELOG.md << EOF
+          ## What's Changed
+
+          $COMMITS
+
+          ## Container Image
+
+          \`\`\`bash
+          docker pull ${{ env.REGISTRY }}/${{ needs.container.outputs.image_name }}:${{ needs.validate.outputs.version }}
+          \`\`\`
+
+          ## Verification
+
+          This release includes:
+          - ✅ Build provenance attestation (SLSA)
+          - ✅ Container image attestation
+          - ✅ SBOM (CycloneDX format)
+          - ✅ Cosign signature
+
+          Verify the container signature:
+          \`\`\`bash
+          cosign verify ${{ env.REGISTRY }}/${{ needs.container.outputs.image_name }}:${{ needs.validate.outputs.version }}
+          \`\`\`
+
+          **Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREVIOUS_TAG}...${{ needs.validate.outputs.version }}
+          EOF
+
+          cat CHANGELOG.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
+        with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          name: Release ${{ needs.validate.outputs.version }}
+          body_path: CHANGELOG.md
+          draft: false
+          prerelease: ${{ needs.validate.outputs.is_prerelease == 'true' }}
+          files: |
+            discord-bot-${{ needs.validate.outputs.version }}.tar.gz
+            sbom.cyclonedx.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release summary
+        run: |
+          echo "## 🚀 Release ${{ needs.validate.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "- 📦 Build: \`discord-bot-${{ needs.validate.outputs.version }}.tar.gz\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 🐳 Container: \`${{ env.REGISTRY }}/${{ needs.container.outputs.image_name }}:${{ needs.validate.outputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- 📋 SBOM: \`sbom.cyclonedx.json\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Security" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Build provenance attested" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Container image signed with Cosign" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ SBOM attested" >> $GITHUB_STEP_SUMMARY

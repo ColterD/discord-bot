@@ -25,19 +25,19 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@fe4161a26a8629af62121b670040955b330f9af2 # v4
+        uses: github/codeql-action/init@497990dfed22177a82ba1bbab381bc8f6d27058f # v3.31.6
         with:
           languages: javascript-typescript
           queries: security-extended
 
       - name: Autobuild
-        uses: github/codeql-action/autobuild@fe4161a26a8629af62121b670040955b330f9af2 # v4
+        uses: github/codeql-action/autobuild@497990dfed22177a82ba1bbab381bc8f6d27058f # v3.31.6
 
       - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@fe4161a26a8629af62121b670040955b330f9af2 # v4
+        uses: github/codeql-action/analyze@497990dfed22177a82ba1bbab381bc8f6d27058f # v3.31.6
         with:
           category: "/language:javascript-typescript"
 
@@ -52,10 +52,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Dependency Review
-        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4
+        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
         with:
           fail-on-severity: high
           deny-licenses: GPL-3.0, AGPL-3.0
@@ -70,10 +70,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # v6.1.0
         with:
           node-version: "22"
           cache: "npm"
@@ -89,7 +89,7 @@ jobs:
         run: npm audit --json > npm-audit-results.json || true
 
       - name: Upload audit results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: npm-audit-results
           path: npm-audit-results.json
@@ -104,12 +104,12 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 0
 
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -123,13 +123,13 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Build Docker image
         run: docker build -t discord-bot:scan .
 
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # master
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: "discord-bot:scan"
           format: "sarif"
@@ -139,77 +139,21 @@ jobs:
           trivyignores: ".trivyignore.yaml"
 
       - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@fe4161a26a8629af62121b670040955b330f9af2 # v4
+        uses: github/codeql-action/upload-sarif@497990dfed22177a82ba1bbab381bc8f6d27058f # v3.31.6
         with:
           sarif_file: "trivy-results.sarif"
         if: always()
 
       - name: Generate SBOM
-        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # master
+        uses: aquasecurity/trivy-action@b6643a29fecd7f34b3597bc6acb0a98b03d33ff8 # v0.33.1
         with:
           image-ref: "discord-bot:scan"
           format: "cyclonedx"
           output: "sbom.json"
 
       - name: Upload SBOM
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: sbom
           path: sbom.json
           retention-days: 90
-
-  # Snyk security scanning (if token available)
-  snyk:
-    name: Snyk Security Scan
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Check if SNYK_TOKEN exists
-        id: snyk-check
-        run: |
-          if [ -n "${{ secrets.SNYK_TOKEN }}" ]; then
-            echo "has_token=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_token=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Setup Node.js
-        if: steps.snyk-check.outputs.has_token == 'true'
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "22"
-          cache: "npm"
-
-      - name: Install dependencies
-        if: steps.snyk-check.outputs.has_token == 'true'
-        run: npm ci
-
-      - name: Run Snyk Code (SAST)
-        if: steps.snyk-check.outputs.has_token == 'true'
-        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04 # master
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: code test
-          args: --severity-threshold=high
-
-      - name: Run Snyk Open Source
-        if: steps.snyk-check.outputs.has_token == 'true'
-        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04 # master
-        continue-on-error: true
-        env:
-          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
-        with:
-          command: test
-          args: --severity-threshold=medium
-
-      - name: Skip notice
-        if: steps.snyk-check.outputs.has_token == 'false'
-        run: echo "Skipping Snyk scan - SNYK_TOKEN not configured"

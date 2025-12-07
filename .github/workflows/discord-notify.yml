@@ -1,0 +1,90 @@
+name: Discord Notifications
+
+on:
+  release:
+    types: [published]
+  workflow_run:
+    workflows: ["CI", "Security Scanning"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  # Notify on new releases
+  release-notification:
+    name: Release Notification
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Send release notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        if: env.DISCORD_WEBHOOK != ''
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "New Release: ${{ github.event.release.tag_name }}",
+                "description": "${{ github.event.release.name }}",
+                "url": "${{ github.event.release.html_url }}",
+                "color": 5763719,
+                "fields": [
+                  {
+                    "name": "Release Type",
+                    "value": "${{ github.event.release.prerelease && 'Pre-release' || 'Stable' }}",
+                    "inline": true
+                  },
+                  {
+                    "name": "Author",
+                    "value": "${{ github.event.release.author.login }}",
+                    "inline": true
+                  }
+                ],
+                "footer": {
+                  "text": "discord-bot"
+                },
+                "timestamp": "${{ github.event.release.published_at }}"
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"
+
+  # Notify on workflow failures
+  failure-notification:
+    name: Failure Notification
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+
+    steps:
+      - name: Send failure notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        if: env.DISCORD_WEBHOOK != ''
+        run: |
+          curl -H "Content-Type: application/json" \
+            -d '{
+              "embeds": [{
+                "title": "Workflow Failed: ${{ github.event.workflow_run.name }}",
+                "description": "The workflow failed on branch `${{ github.event.workflow_run.head_branch }}`",
+                "url": "${{ github.event.workflow_run.html_url }}",
+                "color": 15548997,
+                "fields": [
+                  {
+                    "name": "Commit",
+                    "value": "`${{ github.event.workflow_run.head_sha }}`",
+                    "inline": true
+                  },
+                  {
+                    "name": "Triggered By",
+                    "value": "${{ github.event.workflow_run.actor.login }}",
+                    "inline": true
+                  }
+                ],
+                "footer": {
+                  "text": "discord-bot CI"
+                },
+                "timestamp": "${{ github.event.workflow_run.updated_at }}"
+              }]
+            }' \
+            "$DISCORD_WEBHOOK"

@@ -1,4 +1,4 @@
-name: SLSA Container Provenance
+name: Container Build & Attestation
 
 on:
   push:
@@ -14,30 +14,31 @@ env:
   REGISTRY: ghcr.io
 
 jobs:
-  build:
-    name: Build and Sign Container
+  build-and-attest:
+    name: Build, Sign & Attest Container
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
       id-token: write
+      attestations: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image_name: ${{ steps.image_name.outputs.name }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
 
       - name: Set image name (lowercase for registry compatibility)
         id: image_name
         run: echo "name=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3
+        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
 
       - name: Log in to Container Registry
-        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3
+        uses: docker/login-action@5e57cd118135c172c3672efd75eb46360885c0ef # v3.6.0
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
@@ -45,7 +46,7 @@ jobs:
 
       - name: Extract metadata
         id: meta
-        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5.10.0
         with:
           images: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
           tags: |
@@ -57,7 +58,7 @@ jobs:
 
       - name: Build and push Docker image
         id: build
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
           context: .
           push: true
@@ -65,11 +66,37 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: true
+          provenance: mode=max
           sbom: true
 
+      # GitHub native artifact attestation (replaces external SLSA generator)
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      # Generate SBOM using Anchore Syft
+      - name: Generate SBOM
+        uses: anchore/sbom-action@fbfd9c6c189226748411491745178e0c2017392d # v0.20.10
+        with:
+          image: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}@${{ steps.build.outputs.digest }}
+          format: cyclonedx-json
+          output-file: sbom.cyclonedx.json
+
+      # Attest the SBOM for supply chain security
+      - name: Generate SBOM attestation
+        uses: actions/attest-sbom@4651f806c01d8637787e274ac3bdf724ef169f34 # v3.0.0
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ steps.image_name.outputs.name }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.cyclonedx.json
+          push-to-registry: true
+
+      # Cosign signing for additional security layer (Sigstore)
       - name: Install Cosign
-        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+        uses: sigstore/cosign-installer@faadad0cce49287aee09b3a48701e75088a2c6ad # v4.0.0
 
       - name: Sign container image
         run: |
@@ -77,17 +104,9 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "true"
 
-  provenance:
-    name: Generate SLSA Provenance
-    needs: build
-    permissions:
-      actions: read
-      id-token: write
-      packages: write
-    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.0.0
-    with:
-      image: ghcr.io/${{ needs.build.outputs.image_name }}
-      digest: ${{ needs.build.outputs.digest }}
-      registry-username: ${{ github.actor }}
-    secrets:
-      registry-password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
+        with:
+          name: sbom
+          path: sbom.cyclonedx.json
+          retention-days: 90

@@ -47,5 +47,30 @@
   "files": {
     "includes": ["src/**", "tests/**", "dashboard/**"],
     "ignoreUnknown": true
-  }
+  },
+  "overrides": [
+    {
+      "includes": ["dashboard/**/*.svelte"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "noUnusedImports": "off",
+            "noUnusedVariables": "off"
+          },
+          "style": {
+            "useConst": "off"
+          }
+        }
+      },
+      "assist": {
+        "actions": {
+          "source": {
+            "organizeImports": {
+              "level": "off"
+            }
+          }
+        }
+      }
+    }
+  ]
 }

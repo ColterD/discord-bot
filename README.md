@@ -203,6 +203,76 @@ npm run build
 npm start
 ```
 
+## Dashboard
+
+A SvelteKit web dashboard for monitoring and managing the bot.
+
+### Features
+
+- **Container Management** - View, start, stop, restart Docker containers
+- **GPU Monitoring** - Real-time VRAM usage and loaded models
+- **Metrics** - CPU/memory charts with 10-minute rolling history
+- **Settings Viewer** - Read-only view of bot configuration (secrets masked)
+- **Cloudflare Health** - Check Workers AI connectivity and latency
+
+### Running the Dashboard
+
+```bash
+cd dashboard
+npm install
+npm run dev
+```
+
+The dashboard will be available at `http://localhost:5173`.
+
+### Authentication
+
+The dashboard uses Discord OAuth2. Configure these environment variables:
+
+```env
+DISCORD_CLIENT_ID=your_application_client_id
+DISCORD_CLIENT_SECRET=your_application_client_secret
+BOT_OWNER_IDS=123456789,987654321  # Discord user IDs allowed access
+BOT_ADMIN_IDS=111111111            # Additional admin user IDs
+```
+
+Only users whose Discord ID is in `BOT_OWNER_IDS` or `BOT_ADMIN_IDS` can access the dashboard.
+
+See [`dashboard/API.md`](dashboard/API.md) for API documentation.
+
+---
+
+## Cloudflare Worker (Optional)
+
+An edge-deployed proxy for Workers AI that provides low-latency intent routing.
+
+### Why?
+
+The Cloudflare REST API is centralized. The Worker runs at the **edge datacenter closest to you**, reducing latency from ~200ms to ~50ms.
+
+### Quick Deploy
+
+```bash
+cd cloudflare-worker
+npm install
+npx wrangler login
+npx wrangler secret put API_SECRET  # Generate with: openssl rand -hex 32
+npx wrangler deploy
+```
+
+### Configure the Bot
+
+Add to your `.env`:
+
+```env
+CLOUDFLARE_WORKER_URL=https://discord-bot-ai-proxy.<your-subdomain>.workers.dev
+CLOUDFLARE_WORKER_SECRET=<the secret you set>
+```
+
+See [`cloudflare-worker/README.md`](cloudflare-worker/README.md) for full documentation.
+
+---
+
 ## Docker Deployment
 
 ### Build and Run

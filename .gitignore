@@ -126,9 +126,6 @@ prpm.lock
 # Claude Code local instructions
 CLAUDE.md
 
-# Local dashboard
-dashboard/
-
 # Control scripts with personal paths
 scripts/bot-control.ps1
 scripts/devctl.ps1

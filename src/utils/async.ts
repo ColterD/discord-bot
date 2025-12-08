@@ -110,6 +110,7 @@ export async function retry<T>(fn: () => Promise<T>, options: RetryOptions = {})
 
 /**
  * Execute multiple promises with concurrency limit
+ * Uses a proper semaphore pattern with Set for O(1) removal
  *
  * @example
  * const urls = ["url1", "url2", "url3", "url4", "url5"];
@@ -120,36 +121,31 @@ export async function retry<T>(fn: () => Promise<T>, options: RetryOptions = {})
  */
 export async function withConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
   const results: T[] = [];
-  const executing: Promise<void>[] = [];
+  const executing = new Set<Promise<void>>();
 
   for (const [index, task] of tasks.entries()) {
+    // Create wrapped promise that removes itself when settled
+    // promiseRef is assigned immediately after the IIFE is created but before
+    // any async code runs, so it will always be defined in the finally block
+    let promiseRef!: Promise<void>;
     const promise = (async () => {
-      results[index] = await task();
+      try {
+        results[index] = await task();
+      } finally {
+        executing.delete(promiseRef);
+      }
     })();
+    promiseRef = promise;
 
-    executing.push(promise);
+    executing.add(promise);
 
-    if (executing.length >= limit) {
+    // If at limit, wait for one to complete before continuing
+    if (executing.size >= limit) {
       await Promise.race(executing);
-      // Remove completed promises
-      const completed = executing.filter((p) => {
-        // Check if promise is settled by racing with an already-resolved promise
-        let isSettled = false;
-        Promise.race([p, Promise.resolve()]).then(
-          () => {
-            isSettled = true;
-          },
-          () => {
-            isSettled = true;
-          }
-        );
-        return !isSettled;
-      });
-      executing.length = 0;
-      executing.push(...completed);
     }
   }
 
+  // Wait for remaining tasks
   await Promise.all(executing);
   return results;
 }

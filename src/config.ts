@@ -120,7 +120,7 @@ export const envSchema = z.object({
   MCP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30000),
   MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60000),
 
-  // Docekr MCP Gateway
+  // Docker MCP Gateway
   DOCKER_MCP_ENABLED: z.enum(["true", "false"]).default("false"),
   DOCKER_MCP_TRANSPORT: z.enum(["stdio", "http"]).default("stdio"),
   DOCKER_MCP_GATEWAY_URL: internalServiceUrl("DOCKER_MCP_GATEWAY_URL").default(

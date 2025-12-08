@@ -71,6 +71,7 @@ async function runCommand(cmd: TestCommand, attempt = 1): Promise<TestResult> {
     // Fix for DEP0190: When shell is true, pass the full command string
     const fullCommand = `${cmd.command} ${cmd.args.join(" ")}`;
 
+    // NOSONAR - Command strings are hardcoded in this test runner, not user input
     const proc = spawn(fullCommand, [], {
       stdio: "inherit",
       shell: true,

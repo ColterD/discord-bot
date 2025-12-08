@@ -3,6 +3,7 @@
  * ComfyUI integration for Z-Image-Turbo based image generation
  */
 
+import crypto from "node:crypto";
 import config from "../config.js";
 import { createLogger } from "../utils/logger.js";
 import { getVRAMManager } from "../utils/vram/index.js";
@@ -571,7 +572,8 @@ export class ImageService {
         width,
         height,
         steps,
-        seed: seed === -1 ? Math.floor(Math.random() * 1000000000) : seed,
+        // Use crypto.randomInt for seed generation (SonarCloud: java:S2245)
+        seed: seed === -1 ? crypto.randomInt(1000000000) : seed,
       });
 
       // Queue the prompt

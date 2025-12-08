@@ -5,7 +5,7 @@
  * Run with: npx tsx tests/test-image-generation.ts "your prompt here"
  */
 
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 
 const COMFYUI_URL = process.env.COMFYUI_URL ?? "http://localhost:8188";
@@ -47,7 +47,7 @@ function buildWorkflow(
     width = 1024,
     height = 1024,
     steps = 9, // Official Tongyi-MAI: num_inference_steps=9
-    seed = Math.floor(Math.random() * 1000000000),
+    seed = randomInt(1000000000),
   } = options;
 
   return {

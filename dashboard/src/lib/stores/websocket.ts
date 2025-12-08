@@ -20,8 +20,13 @@ import type {
  */
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
-  // Remove all C0 control characters (includes newlines, tabs, etc.) and DEL
-  return str.replaceAll(/[\u0000-\u001F\u007F]/g, '');
+  // Remove C0 control characters (0x00-0x1F) and DEL (0x7F) to prevent log injection
+  return Array.from(str)
+    .filter(char => {
+      const code = char.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7F;
+    })
+    .join('');
 }
 
 /** WebSocket connection state */

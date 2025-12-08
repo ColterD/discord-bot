@@ -6,15 +6,20 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-// Mock Valkey before importing auth module
-vi.mock("iovalkey", () => ({
-  default: vi.fn().mockImplementation(() => ({
+// Helper to create mock Valkey instance (reduces test nesting)
+function createMockValkey() {
+  return {
     connect: vi.fn().mockResolvedValue(undefined),
     on: vi.fn(),
     get: vi.fn().mockResolvedValue(null),
     set: vi.fn().mockResolvedValue("OK"),
     del: vi.fn().mockResolvedValue(1),
-  })),
+  };
+}
+
+// Mock Valkey before importing auth module
+vi.mock("iovalkey", () => ({
+  default: vi.fn().mockImplementation(createMockValkey),
 }));
 
 // Mock environment
@@ -61,13 +66,7 @@ describe("Auth Module", () => {
 
       // Re-mock iovalkey after reset
       vi.doMock("iovalkey", () => ({
-        default: vi.fn().mockImplementation(() => ({
-          connect: vi.fn().mockResolvedValue(undefined),
-          on: vi.fn(),
-          get: vi.fn().mockResolvedValue(null),
-          set: vi.fn().mockResolvedValue("OK"),
-          del: vi.fn().mockResolvedValue(1),
-        })),
+        default: vi.fn().mockImplementation(createMockValkey)
       }));
 
       const { isAuthorized } = await import("../src/lib/server/auth");

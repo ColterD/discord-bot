@@ -81,7 +81,7 @@ async function initValkey(): Promise<void> {
 }
 
 // Initialize on module load
-initValkey().catch(() => {});
+await initValkey();
 
 export interface Session {
 	userId: string;

@@ -9,6 +9,7 @@ import { json } from '@sveltejs/kit';
 import { getStackContainers } from '$lib/server/docker';
 import type { ContainerMetrics, MetricDataPoint } from '$lib/types';
 import type { RequestHandler } from './$types';
+import { requireAuth } from '$lib/server/api-auth';
 
 interface MetricsStore {
   containers: Map<string, MetricDataPoint[]>;
@@ -111,9 +112,13 @@ async function getContainerMetrics(): Promise<ContainerMetrics[]> {
     }));
 }
 
-export const GET: RequestHandler = async ({ url }) => {
+export const GET: RequestHandler = async (event) => {
+  requireAuth(event);
+
   // Update metrics before returning
   await updateMetrics();
+
+  const { url } = event;
 
   const type = url.searchParams.get('type') ?? 'all';
 

@@ -7,8 +7,8 @@
  * - Exponential backoff for repeat violations
  */
 
-import { triggerPresenceUpdate } from "./presence.js";
 import config from "../config.js";
+import { triggerPresenceUpdate } from "./presence.js";
 
 interface CooldownEntry {
   lastRequest: number;
@@ -76,7 +76,7 @@ const CONFIG = {
 function calculateBackoff(violations: number): number {
   if (!CONFIG.backoffEnabled || violations <= 0) return 0;
   return Math.min(
-    CONFIG.backoffBaseMs * Math.pow(CONFIG.backoffMultiplier, violations - 1),
+    CONFIG.backoffBaseMs * CONFIG.backoffMultiplier ** (violations - 1),
     CONFIG.backoffMaxMs
   );
 }

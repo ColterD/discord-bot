@@ -1,9 +1,10 @@
-import { AIService } from "./service.js";
-import { AgentService } from "./agent.js";
+import type { GuildMember, User } from "discord.js";
+import { CONVERSATION_TIMEOUT_MS, MAX_CONTEXT_MESSAGES } from "../constants.js";
+import { type AgentService, getAgentService } from "./agent.js";
 import { getAIControlService } from "./control.js";
 import { getMemoryManager } from "./memory/index.js";
 import { getOrchestrator } from "./orchestrator.js";
-import type { GuildMember, User } from "discord.js";
+import { type AIService, getAIService } from "./service.js";
 
 interface ConversationMessage {
   role: "user" | "assistant";
@@ -15,11 +16,6 @@ interface ConversationContext {
   messages: ConversationMessage[];
   lastActivity: number;
 }
-
-// Conversation timeout - clear context after 30 minutes of inactivity
-const CONVERSATION_TIMEOUT = 30 * 60 * 1000;
-// Max messages to keep in context
-const MAX_CONTEXT_MESSAGES = 20;
 
 /**
  * Conversation Service - Manages multi-turn conversations with memory
@@ -33,8 +29,8 @@ export class ConversationService {
   private readonly healthCheckInterval = 30000; // Check every 30 seconds
 
   constructor() {
-    this.aiService = new AIService();
-    this.agentService = new AgentService();
+    this.aiService = getAIService();
+    this.agentService = getAgentService();
   }
 
   /**
@@ -74,7 +70,7 @@ export class ConversationService {
     let context = this.conversations.get(contextId);
 
     // Check if context exists and is not expired
-    if (context && now - context.lastActivity < CONVERSATION_TIMEOUT) {
+    if (context && now - context.lastActivity < CONVERSATION_TIMEOUT_MS) {
       return context;
     }
 
@@ -225,7 +221,8 @@ ${memoryContext}`;
     member: GuildMember | null,
     channelId: string,
     guildId?: string,
-    onImageGenerationStart?: () => Promise<void>
+    onImageGenerationStart?: () => Promise<void>,
+    onTyping?: () => Promise<void>
   ): Promise<{
     response: string;
     toolsUsed: string[];
@@ -244,6 +241,7 @@ ${memoryContext}`;
       channelId,
       guildId: guildId ?? null,
       ...(onImageGenerationStart && { onImageGenerationStart }),
+      ...(onTyping && { onTyping }),
     });
 
     return {
@@ -279,7 +277,7 @@ ${memoryContext}`;
     let cleaned = 0;
 
     for (const [contextId, context] of this.conversations) {
-      if (now - context.lastActivity > CONVERSATION_TIMEOUT) {
+      if (now - context.lastActivity > CONVERSATION_TIMEOUT_MS) {
         this.conversations.delete(contextId);
         cleaned++;
       }

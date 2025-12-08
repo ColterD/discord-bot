@@ -176,13 +176,17 @@ export class ValkeyCache implements CacheClient {
   private readonly client: Valkey;
   private connected = false;
   private readonly keyPrefix: string;
+  private errorLogged = false;
 
   constructor(url: string, keyPrefix: string) {
     this.keyPrefix = keyPrefix;
     this.client = new Valkey(url, {
       retryStrategy: (times: number) => {
         if (times > 3) {
-          log.warn("Max retries reached, giving up");
+          if (!this.errorLogged) {
+            log.warn("Max retries reached, giving up");
+            this.errorLogged = true;
+          }
           return null; // Stop retrying
         }
         return Math.min(times * 200, 2000);
@@ -194,12 +198,17 @@ export class ValkeyCache implements CacheClient {
 
     this.client.on("connect", () => {
       this.connected = true;
+      this.errorLogged = false; // Reset error flag on successful connection
       log.info("Connected to Valkey");
     });
 
     this.client.on("error", (err: Error) => {
       this.connected = false;
-      log.error("Connection error: " + err.message, err);
+      // Only log the first error to avoid spam
+      if (!this.errorLogged) {
+        log.warn(`Connection error: ${err.message}`);
+        this.errorLogged = true;
+      }
     });
 
     this.client.on("close", () => {
@@ -213,7 +222,7 @@ export class ValkeyCache implements CacheClient {
       await this.client.connect();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      log.error("Failed to connect: " + message, error);
+      log.error(`Failed to connect: ${message}`, error);
       throw error;
     }
   }
@@ -297,7 +306,7 @@ class CacheManager {
       log.info("Using Valkey for caching");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      log.warn("Valkey unavailable, using in-memory fallback: " + message);
+      log.warn(`Valkey unavailable, using in-memory fallback: ${message}`);
       this.cache = this.fallbackCache;
       this.usingFallback = true;
     }

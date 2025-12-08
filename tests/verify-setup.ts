@@ -4,10 +4,10 @@
  */
 
 import {
+  fetchChannelMessages,
   getRequiredEnv,
   printEnvStatus,
   sendWebhookMessage,
-  fetchChannelMessages,
 } from "./utils/index.js";
 
 async function main(): Promise<void> {
@@ -45,14 +45,16 @@ async function main(): Promise<void> {
   }
   console.log("✓ Discord API test successful");
 
-  console.log("\n" + "=".repeat(60));
+  console.log(`\n${"=".repeat(60)}`);
   console.log("✓ All checks passed! Ready to run tests.");
   console.log("=".repeat(60));
 }
 
 try {
   await main();
+  // Graceful exit
+  setTimeout(() => process.exit(0), 100);
 } catch (error) {
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-  process.exit(1);
+  setTimeout(() => process.exit(1), 100);
 }

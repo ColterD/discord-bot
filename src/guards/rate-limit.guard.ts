@@ -1,13 +1,13 @@
-import type { GuardFunction, SimpleCommandMessage } from "discordx";
 import type {
+  AnySelectMenuInteraction,
   ButtonInteraction,
   CommandInteraction,
   ContextMenuCommandInteraction,
   ModalSubmitInteraction,
-  AnySelectMenuInteraction,
   Snowflake,
 } from "discord.js";
 import { Collection } from "discord.js";
+import type { GuardFunction, SimpleCommandMessage } from "discordx";
 
 interface RateLimitEntry {
   timestamps: number[];

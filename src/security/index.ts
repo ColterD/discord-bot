@@ -6,23 +6,23 @@
  * - Prompt injection and impersonation detection
  */
 
+
 export {
-  ToolPermission,
+  type DetectionResult,
+  detectImpersonation,
+  isImpersonatingRole,
+  quickInjectionCheck,
+  type ThreatDetail,
+} from "./impersonation-detector.js";
+export {
   checkToolAccess,
   filterToolsForUser,
   getExecutableToolsForUser,
+  getToolNotFoundMessage,
   getToolPermission,
   isToolVisibleToUser,
   logToolAccess,
-  getToolNotFoundMessage,
-  type ToolWithPermission,
   type ToolAccessResult,
+  ToolPermission,
+  type ToolWithPermission,
 } from "./tool-permissions.js";
-
-export {
-  detectImpersonation,
-  quickInjectionCheck,
-  isImpersonatingRole,
-  type ThreatDetail,
-  type DetectionResult,
-} from "./impersonation-detector.js";

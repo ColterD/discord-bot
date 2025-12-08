@@ -3,8 +3,8 @@
  * Valkey-backed conversation storage with automatic TTL and summarization triggers
  */
 
-import { getCache } from "../../utils/cache.js";
 import { config } from "../../config.js";
+import { getCache } from "../../utils/cache.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("ConversationStore");

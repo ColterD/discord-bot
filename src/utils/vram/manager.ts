@@ -10,127 +10,54 @@
  * - Intelligent model loading/unloading
  * - Priority-based resource allocation
  * - Prevents VRAM contention between services
+ * - Autonomous VRAM/RAM migration
+ * - Request deduplication and self-scheduling polling
  *
- * @security All HTTP requests use URLs from config (config.llm.apiUrl, config.comfyui.url)
- * which are validated at config load time via validateInternalServiceUrl().
- * These are trusted internal Docker service URLs, not user input.
+ * @module utils/vram/manager
  */
 
-import axios from "axios";
-import { createLogger } from "./logger.js";
-import config from "../config.js";
+import config from "../../config.js";
+import {
+  VRAM_DEFAULT_MODEL_SIZE_MB,
+  VRAM_ESTIMATED_TASK_DURATION_MS,
+  VRAM_FULL_GPU_RATIO_THRESHOLD,
+  VRAM_RAM_RATIO_THRESHOLD,
+  VRAM_TRANSFORMER_LAYERS,
+  VRAM_WAIT_CHECK_INTERVAL_MS,
+  VRAM_WAIT_DEFAULT_TIMEOUT_MS,
+} from "../../constants.js";
+import { delay } from "../async.js";
+import { acquireLock } from "../distributed-lock.js";
+import { createLogger } from "../logger.js";
+import { getComfyUIVRAMStatus } from "./comfyui-client.js";
+import { VRAM_CONFIG } from "./config.js";
+import { bytesToMB } from "./helpers.js";
+import { MigrationManager } from "./migration.js";
+import { getOllamaVRAMStatus, unloadModel } from "./ollama-client.js";
+import {
+  type ActiveTask,
+  type GPUMemoryStatus,
+  type MigrationStatus,
+  type ModelLoadStatus,
+  type OptimalLoadOptions,
+  TaskPriority,
+  TaskType,
+  type VRAMAllocationRequest,
+  type VRAMAllocationResult,
+} from "./types.js";
 
 const log = createLogger("VRAMManager");
 
 /**
- * GPU memory status
- */
-interface GPUMemoryStatus {
-  totalMB: number;
-  usedMB: number;
-  freeMB: number;
-  usagePercent: number;
-}
-
-/**
- * Model load status from Ollama
- */
-interface OllamaModel {
-  name: string;
-  size: number; // bytes (total model size)
-  size_vram: number; // bytes used in VRAM
-  expires_at: string;
-}
-
-/**
- * Task priority levels
- */
-export enum TaskPriority {
-  LOW = 0,
-  NORMAL = 1,
-  HIGH = 2,
-  CRITICAL = 3,
-}
-
-/**
- * Task types that need VRAM
- */
-export enum TaskType {
-  LLM_CHAT = "llm_chat",
-  IMAGE_GENERATION = "image_generation",
-  EMBEDDING = "embedding",
-  SUMMARIZATION = "summarization",
-}
-
-/**
- * VRAM allocation request
- */
-interface VRAMAllocationRequest {
-  taskType: TaskType;
-  priority: TaskPriority;
-  estimatedVRAM: number; // MB
-  userId?: string;
-  requestId: string;
-}
-
-/**
- * VRAM allocation result
- */
-interface VRAMAllocationResult {
-  granted: boolean;
-  reason?: string;
-  waitTimeMs?: number;
-  currentFreeVRAM?: number;
-}
-
-/**
- * Active task tracking
- */
-interface ActiveTask {
-  requestId: string;
-  taskType: TaskType;
-  priority: TaskPriority;
-  startTime: number;
-  userId?: string | undefined;
-}
-
-// VRAM thresholds (in MB)
-const VRAM_CONFIG = {
-  // Total VRAM on RTX 4090 (you can adjust for your GPU)
-  totalVRAM: Number.parseInt(process.env.GPU_TOTAL_VRAM_MB ?? "24576", 10),
-
-  // Minimum free VRAM to keep as buffer
-  minFreeBuffer: Number.parseInt(process.env.GPU_MIN_FREE_MB ?? "512", 10),
-
-  // VRAM thresholds
-  warningThreshold: 0.75, // 75% usage warning
-  criticalThreshold: 0.9, // 90% usage critical
-
-  // Estimated VRAM usage per task type (MB)
-  estimatedUsage: {
-    [TaskType.LLM_CHAT]: 4096, // Allow spillover to RAM (was 14000)
-    [TaskType.IMAGE_GENERATION]: 8000, // ComfyUI with FLUX ~8GB
-    [TaskType.EMBEDDING]: 500, // Small embedding model
-    [TaskType.SUMMARIZATION]: 2000, // 3B summarization model
-  },
-
-  // Task priorities (higher = more important)
-  taskPriorities: {
-    [TaskType.LLM_CHAT]: TaskPriority.HIGH,
-    [TaskType.IMAGE_GENERATION]: TaskPriority.NORMAL,
-    [TaskType.EMBEDDING]: TaskPriority.LOW,
-    [TaskType.SUMMARIZATION]: TaskPriority.LOW,
-  },
-
-  // Polling interval for VRAM status (ms)
-  pollInterval: 5000,
-
-  // Timeout for VRAM operations (ms)
-  operationTimeout: 30000,
-};
-
-/**
  * VRAM Manager Singleton
+ *
+ * Enhanced with autonomous VRAM/RAM migration:
+ * - Monitors for external VRAM consumers (games, other apps)
+ * - Automatically migrates models to RAM when VRAM is needed
+ * - Migrates back to VRAM when space becomes available
+ * - Intelligent throttling to prevent thrashing
+ * - Request deduplication to prevent concurrent API calls
+ * - Self-scheduling polling for accurate intervals
  */
 class VRAMManager {
   private static instance: VRAMManager | null = null;
@@ -138,12 +65,24 @@ class VRAMManager {
   private readonly activeTasks = new Map<string, ActiveTask>();
   private pendingRequests: VRAMAllocationRequest[] = [];
   private lastVRAMStatus: GPUMemoryStatus | null = null;
-  private pollInterval: NodeJS.Timeout | null = null;
+  private pollTimeout: NodeJS.Timeout | null = null;
   private disposed = false;
 
-  // Callbacks for state changes
+  // Request deduplication - prevents concurrent status updates
+  private updatePromise: Promise<void> | null = null;
+
+  // Distributed lock handles for active allocations
+  private readonly allocationLocks = new Map<
+    string,
+    { release: () => Promise<boolean>; extend: (ttlMs?: number) => Promise<boolean> }
+  >();
+
+  // Callbacks for state changes (with unsubscribe support)
   private readonly onVRAMCritical: (() => void)[] = [];
   private readonly onVRAMNormal: (() => void)[] = [];
+
+  // Migration manager
+  private readonly migration = new MigrationManager();
 
   private constructor() {
     this.startPolling();
@@ -158,134 +97,169 @@ class VRAMManager {
   }
 
   /**
-   * Dispose of the manager
+   * Dispose of the manager and cancel any pending operations
    */
   dispose(): void {
     this.disposed = true;
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
+    if (this.pollTimeout) {
+      clearTimeout(this.pollTimeout);
+      this.pollTimeout = null;
     }
+
+    // Release all held locks
+    for (const [, lockHandle] of this.allocationLocks) {
+      void lockHandle.release().catch(() => {
+        // Ignore errors during shutdown
+      });
+    }
+    this.allocationLocks.clear();
+
+    this.activeTasks.clear();
+    this.pendingRequests = [];
+    this.onVRAMCritical.length = 0;
+    this.onVRAMNormal.length = 0;
     VRAMManager.instance = null;
+    log.info("VRAM Manager disposed");
   }
 
   /**
-   * Start VRAM status polling
+   * Start VRAM status polling using self-scheduling setTimeout
+   * This ensures accurate intervals even when async operations take time
    */
   private startPolling(): void {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
+    if (this.pollTimeout) {
+      clearTimeout(this.pollTimeout);
     }
 
     // Initial status check
     void this.updateVRAMStatus();
 
-    this.pollInterval = setInterval(() => {
+    // Start self-scheduling polling
+    this.scheduleNextPoll();
+  }
+
+  /**
+   * Schedule the next poll using setTimeout for accurate timing
+   * This ensures polling interval doesn't drift due to async work time
+   */
+  private scheduleNextPoll(): void {
+    if (this.disposed) return;
+
+    this.pollTimeout = setTimeout(() => {
       if (!this.disposed) {
-        void this.updateVRAMStatus();
+        void this.updateVRAMStatus().finally(() => {
+          this.scheduleNextPoll();
+        });
       }
     }, VRAM_CONFIG.pollInterval);
   }
 
   /**
    * Update VRAM status from all sources
+   * Uses promise-based mutex to allow callers to wait for the update to complete
    */
-  private async updateVRAMStatus(): Promise<void> {
+  async updateVRAMStatus(): Promise<void> {
+    // If update is already in progress, wait for it to complete
+    if (this.updatePromise) {
+      log.debug("VRAM status update already in progress, waiting...");
+      await this.updatePromise;
+      return;
+    }
+
+    // Start new update and store the promise
+    this.updatePromise = this.doUpdateVRAMStatus();
     try {
+      await this.updatePromise;
+    } finally {
+      this.updatePromise = null;
+    }
+  }
+
+  /**
+   * Determine status from raw readings
+   */
+  private determineCurrentStatus(
+    ollamaStatus: { size_vram: number; size: number; name: string }[] | null,
+    comfyuiStatus: GPUMemoryStatus | null
+  ): void {
+    if (comfyuiStatus) {
+      this.lastVRAMStatus = comfyuiStatus;
+    } else if (ollamaStatus === null) {
+      // Fallback when neither source is available - assume full VRAM available
+      this.lastVRAMStatus = {
+        totalMB: VRAM_CONFIG.totalVRAM,
+        usedMB: 0,
+        freeMB: VRAM_CONFIG.totalVRAM,
+        usagePercent: 0,
+      };
+      log.debug("Using default VRAM status (full GPU available) - no monitoring source responded");
+    } else {
+      // Estimate from Ollama loaded models
+      const usedMB = ollamaStatus.reduce((sum, m) => sum + bytesToMB(m.size_vram), 0);
+      this.lastVRAMStatus = {
+        totalMB: VRAM_CONFIG.totalVRAM,
+        usedMB,
+        freeMB: VRAM_CONFIG.totalVRAM - usedMB,
+        usagePercent: usedMB / VRAM_CONFIG.totalVRAM,
+      };
+    }
+  }
+
+  /**
+   * Check thresholds and triggers callbacks
+   */
+  private checkThresholds(): void {
+    if (!this.lastVRAMStatus) return;
+
+    const usage = this.lastVRAMStatus.usagePercent;
+    if (usage >= VRAM_CONFIG.criticalThreshold) {
+      log.warn(
+        `VRAM critical: ${Math.round(usage * 100)}% used (${this.lastVRAMStatus.usedMB}MB / ${this.lastVRAMStatus.totalMB}MB)`
+      );
+      for (const cb of this.onVRAMCritical) {
+        cb();
+      }
+    } else if (usage < VRAM_CONFIG.warningThreshold) {
+      for (const cb of this.onVRAMNormal) {
+        cb();
+      }
+    }
+
+    // Update migration baseline
+    this.migration.updateBaseline(this.lastVRAMStatus.usedMB);
+  }
+
+  /**
+   * Internal implementation of VRAM status update
+   */
+  private async doUpdateVRAMStatus(): Promise<void> {
+    try {
+      // Only check ComfyUI if image generation is enabled
       const [ollamaStatus, comfyuiStatus] = await Promise.all([
-        this.getOllamaVRAMStatus(),
-        this.getComfyUIVRAMStatus(),
+        getOllamaVRAMStatus(),
+        config.comfyui.enabled ? getComfyUIVRAMStatus() : Promise.resolve(null),
       ]);
 
-      // Combine status from both sources (use ComfyUI's nvidia-smi view if available)
-      if (comfyuiStatus) {
-        this.lastVRAMStatus = comfyuiStatus;
-      } else if (ollamaStatus) {
-        // Estimate from Ollama loaded models
-        const usedMB = ollamaStatus.reduce(
-          (sum, m) => sum + Math.round(m.size_vram / (1024 * 1024)),
-          0
-        );
-        this.lastVRAMStatus = {
-          totalMB: VRAM_CONFIG.totalVRAM,
-          usedMB,
-          freeMB: VRAM_CONFIG.totalVRAM - usedMB,
-          usagePercent: usedMB / VRAM_CONFIG.totalVRAM,
-        };
-      }
+      // Determine and set this.lastVRAMStatus
+      this.determineCurrentStatus(ollamaStatus, comfyuiStatus);
 
-      // Check thresholds and notify
-      if (this.lastVRAMStatus) {
-        const usage = this.lastVRAMStatus.usagePercent;
-        if (usage >= VRAM_CONFIG.criticalThreshold) {
-          log.warn(
-            `VRAM critical: ${Math.round(usage * 100)}% used (${this.lastVRAMStatus.usedMB}MB / ${this.lastVRAMStatus.totalMB}MB)`
-          );
-          this.onVRAMCritical.forEach((cb) => cb());
-        } else if (usage < VRAM_CONFIG.warningThreshold) {
-          this.onVRAMNormal.forEach((cb) => cb());
-        }
-      }
+      // Check thresholds
+      this.checkThresholds();
 
       // Process pending requests if we have free VRAM
       await this.processPendingRequests();
+
+      // Check for autonomous migration opportunities
+      await this.migration.checkAutonomousMigration(
+        ollamaStatus,
+        this.lastVRAMStatus,
+        () => this.getModelLoadStatus(),
+        () => this.updateVRAMStatus()
+      );
     } catch (error) {
       log.debug(
         `Failed to update VRAM status: ${error instanceof Error ? error.message : String(error)}`
       );
-    }
-  }
-
-  /**
-   * Get VRAM status from Ollama
-   */
-  private async getOllamaVRAMStatus(): Promise<OllamaModel[] | null> {
-    try {
-      const response = await axios.get<{ models: OllamaModel[] }>(`${config.llm.apiUrl}/api/ps`, {
-        timeout: 5000,
-      });
-      return response.data.models || [];
-    } catch {
-      return null;
-    }
-  }
-
-  /**
-   * Get VRAM status from ComfyUI
-   */
-  private async getComfyUIVRAMStatus(): Promise<GPUMemoryStatus | null> {
-    try {
-      const response = await fetch(`${config.comfyui.url}/system_stats`, {
-        method: "GET",
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) return null;
-
-      const data = (await response.json()) as {
-        devices?: {
-          name: string;
-          type: string;
-          vram_total: number;
-          vram_free: number;
-        }[];
-      };
-
-      const gpu = data.devices?.find((d) => d.type === "cuda");
-      if (!gpu) return null;
-
-      const totalMB = Math.round(gpu.vram_total / (1024 * 1024));
-      const freeMB = Math.round(gpu.vram_free / (1024 * 1024));
-      const usedMB = totalMB - freeMB;
-
-      return {
-        totalMB,
-        usedMB,
-        freeMB,
-        usagePercent: usedMB / totalMB,
-      };
-    } catch {
-      return null;
     }
   }
 
@@ -313,6 +287,7 @@ class VRAMManager {
    *
    * For LLM tasks, we're more permissive since Ollama can spill to RAM.
    * For image generation, we're stricter since ComfyUI needs contiguous VRAM.
+   * Uses distributed locking to prevent race conditions in multi-instance deployments.
    */
   async requestAllocation(request: VRAMAllocationRequest): Promise<VRAMAllocationResult> {
     const requiredMB = request.estimatedVRAM || VRAM_CONFIG.estimatedUsage[request.taskType];
@@ -330,6 +305,41 @@ class VRAMManager {
       return { granted: true };
     }
 
+    // For image generation, use distributed lock to prevent race conditions
+    const lockHandle = await acquireLock(`vram:allocation:${request.taskType}`, {
+      ttlMs: 60000, // 60 second lock TTL
+      acquireTimeoutMs: 30000, // Wait up to 30 seconds to acquire
+    });
+
+    if (!lockHandle) {
+      log.warn(`Failed to acquire VRAM allocation lock for ${request.taskType}`);
+      return {
+        granted: false,
+        reason: "Could not acquire VRAM allocation lock (high contention)",
+        waitTimeMs: 30000,
+      };
+    }
+
+    // Store lock handle for release when allocation is freed
+    this.allocationLocks.set(request.requestId, lockHandle);
+
+    try {
+      return await this.performAllocation(request, requiredMB);
+    } catch (error) {
+      // On error, release the lock immediately
+      this.allocationLocks.delete(request.requestId);
+      await lockHandle.release();
+      throw error;
+    }
+  }
+
+  /**
+   * Internal allocation logic (called within lock)
+   */
+  private async performAllocation(
+    request: VRAMAllocationRequest,
+    requiredMB: number
+  ): Promise<VRAMAllocationResult> {
     // Check current status
     if (!this.lastVRAMStatus) {
       await this.updateVRAMStatus();
@@ -390,7 +400,14 @@ class VRAMManager {
       };
     }
 
-    // Still not enough, add to pending queue
+    // Still not enough - release lock since we're not allocating
+    const lockHandle = this.allocationLocks.get(request.requestId);
+    if (lockHandle) {
+      this.allocationLocks.delete(request.requestId);
+      await lockHandle.release();
+    }
+
+    // Add to pending queue
     this.pendingRequests.push(request);
 
     log.info(
@@ -414,7 +431,37 @@ class VRAMManager {
       const duration = Date.now() - task.startTime;
       log.debug(`VRAM released for ${task.taskType} (${requestId}) after ${duration}ms`);
       this.activeTasks.delete(requestId);
+
+      // Release distributed lock if held
+      const lockHandle = this.allocationLocks.get(requestId);
+      if (lockHandle) {
+        this.allocationLocks.delete(requestId);
+        void lockHandle.release().catch((error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          log.debug(`Failed to release VRAM allocation lock: ${message}`);
+        });
+      }
     }
+  }
+
+  /**
+   * Calculate potential VRAM that can be freed
+   */
+  private calculatePotentialFreedVRAM(
+    ollamaModels: { size_vram: number }[],
+    requestPriority: TaskPriority
+  ): number {
+    let potentialFreeMB = 0;
+
+    for (const model of ollamaModels) {
+      // Only unload if the new task has higher or equal priority
+      const modelPriority = VRAM_CONFIG.taskPriorities[TaskType.LLM_CHAT];
+      if (requestPriority >= modelPriority) {
+        potentialFreeMB += bytesToMB(model.size_vram);
+      }
+    }
+
+    return potentialFreeMB;
   }
 
   /**
@@ -422,52 +469,37 @@ class VRAMManager {
    */
   private async tryFreeVRAM(requiredMB: number, requestPriority: TaskPriority): Promise<number> {
     // Check if we should unload the LLM for image generation
-    const ollamaModels = await this.getOllamaVRAMStatus();
+    const ollamaModels = await getOllamaVRAMStatus();
 
-    if (ollamaModels && ollamaModels.length > 0) {
-      // Calculate potential VRAM to free
-      let potentialFreeMB = 0;
-
-      for (const model of ollamaModels) {
-        // Only unload if the new task has higher or equal priority
-        const modelPriority = VRAM_CONFIG.taskPriorities[TaskType.LLM_CHAT];
-        if (requestPriority >= modelPriority) {
-          potentialFreeMB += Math.round(model.size_vram / (1024 * 1024));
-        }
-      }
-
-      const currentFree = this.lastVRAMStatus?.freeMB ?? 0;
-      const totalAfterUnload = currentFree + potentialFreeMB;
-
-      if (totalAfterUnload >= requiredMB + VRAM_CONFIG.minFreeBuffer) {
-        // Unload Ollama models
-        log.info(`Unloading Ollama model(s) to free ${potentialFreeMB}MB for new task`);
-
-        try {
-          for (const model of ollamaModels) {
-            await axios.post(
-              `${config.llm.apiUrl}/api/generate`,
-              {
-                model: model.name,
-                keep_alive: 0, // Immediately unload
-                stream: false,
-              },
-              { timeout: 30000 }
-            );
-          }
-
-          // Update status after unload
-          await this.updateVRAMStatus();
-
-          return this.lastVRAMStatus?.freeMB ?? potentialFreeMB;
-        } catch (error) {
-          log.error("Failed to unload Ollama model:", error);
-          return currentFree;
-        }
-      }
+    if (!ollamaModels || ollamaModels.length === 0) {
+      return this.lastVRAMStatus?.freeMB ?? 0;
     }
 
-    return this.lastVRAMStatus?.freeMB ?? 0;
+    const potentialFreeMB = this.calculatePotentialFreedVRAM(ollamaModels, requestPriority);
+
+    const currentFree = this.lastVRAMStatus?.freeMB ?? 0;
+    const totalAfterUnload = currentFree + potentialFreeMB;
+
+    if (totalAfterUnload < requiredMB + VRAM_CONFIG.minFreeBuffer) {
+      return currentFree;
+    }
+
+    // Unload Ollama models
+    log.info(`Unloading Ollama model(s) to free ${potentialFreeMB}MB for new task`);
+
+    try {
+      for (const model of ollamaModels) {
+        await unloadModel(model.name);
+      }
+
+      // Update status after unload
+      await this.updateVRAMStatus();
+
+      return this.lastVRAMStatus?.freeMB ?? potentialFreeMB;
+    } catch (error) {
+      log.error("Failed to unload Ollama model:", error);
+      return currentFree;
+    }
   }
 
   /**
@@ -516,7 +548,7 @@ class VRAMManager {
    */
   async requestLLMAccess(): Promise<boolean> {
     // Check if a model is already loaded in Ollama
-    const ollamaModels = await this.getOllamaVRAMStatus();
+    const ollamaModels = await getOllamaVRAMStatus();
     if (ollamaModels && ollamaModels.length > 0) {
       // Model is already loaded - Ollama handles memory management
       log.debug("LLM model already loaded, granting access (Ollama manages memory spillover)");
@@ -619,7 +651,7 @@ class VRAMManager {
    * Check if LLM is currently loaded
    */
   async isLLMLoaded(): Promise<boolean> {
-    const models = await this.getOllamaVRAMStatus();
+    const models = await getOllamaVRAMStatus();
     return models !== null && models.length > 0;
   }
 
@@ -627,7 +659,7 @@ class VRAMManager {
    * Get loaded Ollama models
    */
   async getLoadedModels(): Promise<string[]> {
-    const models = await this.getOllamaVRAMStatus();
+    const models = await getOllamaVRAMStatus();
     return models?.map((m) => m.name) ?? [];
   }
 
@@ -635,14 +667,8 @@ class VRAMManager {
    * Get model load location status
    * Returns whether the model is loaded in VRAM, RAM, or not loaded
    */
-  async getModelLoadStatus(): Promise<{
-    loaded: boolean;
-    location: "vram" | "ram" | "partial" | "unloaded";
-    vramUsedMB: number;
-    modelSizeMB: number;
-    modelName: string | null;
-  }> {
-    const models = await this.getOllamaVRAMStatus();
+  async getModelLoadStatus(): Promise<ModelLoadStatus> {
+    const models = await getOllamaVRAMStatus();
 
     if (!models || models.length === 0) {
       return {
@@ -666,8 +692,8 @@ class VRAMManager {
       };
     }
 
-    const vramUsedMB = Math.round(model.size_vram / (1024 * 1024));
-    const modelSizeMB = Math.round(model.size / (1024 * 1024));
+    const vramUsedMB = bytesToMB(model.size_vram);
+    const modelSizeMB = bytesToMB(model.size);
 
     // Determine location based on VRAM usage
     // If VRAM usage is less than 10% of model size, it's mostly in RAM
@@ -675,9 +701,9 @@ class VRAMManager {
     let location: "vram" | "ram" | "partial";
     const vramRatio = model.size_vram / model.size;
 
-    if (vramRatio < 0.1) {
+    if (vramRatio < VRAM_RAM_RATIO_THRESHOLD) {
       location = "ram";
-    } else if (vramRatio > 0.9) {
+    } else if (vramRatio > VRAM_FULL_GPU_RATIO_THRESHOLD) {
       location = "vram";
     } else {
       location = "partial"; // Split between VRAM and RAM
@@ -696,22 +722,14 @@ class VRAMManager {
    * Force unload all Ollama models
    */
   async unloadAllModels(): Promise<void> {
-    const models = await this.getOllamaVRAMStatus();
+    const models = await getOllamaVRAMStatus();
     if (!models || models.length === 0) return;
 
     log.info("Force unloading all Ollama models");
 
     for (const model of models) {
       try {
-        await axios.post(
-          `${config.llm.apiUrl}/api/generate`,
-          {
-            model: model.name,
-            keep_alive: 0,
-            stream: false,
-          },
-          { timeout: 30000 }
-        );
+        await unloadModel(model.name);
       } catch (error) {
         log.warn(`Failed to unload model ${model.name}:`, error);
       }
@@ -722,16 +740,30 @@ class VRAMManager {
 
   /**
    * Register callback for VRAM critical state
+   * @returns Unsubscribe function to remove the callback
    */
-  onCritical(callback: () => void): void {
+  onCritical(callback: () => void): () => void {
     this.onVRAMCritical.push(callback);
+    return () => {
+      const index = this.onVRAMCritical.indexOf(callback);
+      if (index !== -1) {
+        this.onVRAMCritical.splice(index, 1);
+      }
+    };
   }
 
   /**
    * Register callback for VRAM normal state
+   * @returns Unsubscribe function to remove the callback
    */
-  onNormal(callback: () => void): void {
+  onNormal(callback: () => void): () => void {
     this.onVRAMNormal.push(callback);
+    return () => {
+      const index = this.onVRAMNormal.indexOf(callback);
+      if (index !== -1) {
+        this.onVRAMNormal.splice(index, 1);
+      }
+    };
   }
 
   /**
@@ -743,7 +775,7 @@ class VRAMManager {
     if (activeTaskCount === 0) return 0;
 
     // Estimate ~45 seconds per active task
-    return activeTaskCount * 45000;
+    return activeTaskCount * VRAM_ESTIMATED_TASK_DURATION_MS;
   }
 
   /**
@@ -773,7 +805,7 @@ class VRAMManager {
    * The model has ~60 layers. Each layer uses roughly model_size/60 VRAM.
    * We calculate how many layers can fit in available VRAM.
    */
-  async calculateOptimalGPULayers(modelSizeMB = 14500): Promise<number> {
+  async calculateOptimalGPULayers(modelSizeMB = VRAM_DEFAULT_MODEL_SIZE_MB): Promise<number> {
     // Refresh VRAM status
     await this.updateVRAMStatus();
 
@@ -783,7 +815,7 @@ class VRAMManager {
     }
 
     const availableVRAM = this.lastVRAMStatus.freeMB - VRAM_CONFIG.minFreeBuffer;
-    const totalLayers = 60; // Typical transformer layer count for 30B model
+    const totalLayers = VRAM_TRANSFORMER_LAYERS;
 
     // If we have enough for the full model, use all GPU layers
     if (availableVRAM >= modelSizeMB) {
@@ -809,10 +841,7 @@ class VRAMManager {
    * Get Ollama load options based on current VRAM availability
    * This returns options to pass to Ollama's /api/generate or /api/chat
    */
-  async getOptimalLoadOptions(): Promise<{
-    num_gpu: number;
-    main_gpu: number;
-  }> {
+  async getOptimalLoadOptions(): Promise<OptimalLoadOptions> {
     const numGpu = await this.calculateOptimalGPULayers();
 
     return {
@@ -840,9 +869,12 @@ class VRAMManager {
    * Wait for VRAM to become available (with timeout)
    * Useful when ComfyUI is using VRAM and we want to wait for it
    */
-  async waitForVRAM(requiredMB: number, timeoutMs = 60000): Promise<boolean> {
+  async waitForVRAM(
+    requiredMB: number,
+    timeoutMs = VRAM_WAIT_DEFAULT_TIMEOUT_MS
+  ): Promise<boolean> {
     const startTime = Date.now();
-    const checkInterval = 2000;
+    const checkInterval = VRAM_WAIT_CHECK_INTERVAL_MS;
 
     while (Date.now() - startTime < timeoutMs) {
       await this.updateVRAMStatus();
@@ -856,11 +888,18 @@ class VRAMManager {
         log.debug(`Waiting for VRAM: ${available}MB available, need ${requiredMB}MB`);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, checkInterval));
+      await delay(checkInterval);
     }
 
     log.warn(`Timeout waiting for ${requiredMB}MB VRAM after ${timeoutMs}ms`);
     return false;
+  }
+
+  /**
+   * Get current migration status for debugging/monitoring
+   */
+  getMigrationStatus(): MigrationStatus {
+    return this.migration.getStatus();
   }
 }
 
@@ -869,5 +908,5 @@ export function getVRAMManager(): VRAMManager {
   return VRAMManager.getInstance();
 }
 
-// Export config for external use
-export { VRAM_CONFIG };
+// Export the class for testing
+export { VRAMManager };

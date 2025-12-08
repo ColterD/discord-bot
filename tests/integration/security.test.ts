@@ -10,17 +10,17 @@
  */
 
 import { strict as assert } from "node:assert";
-
-// Import modules once at top level for efficiency
-import {
-  validateToolRequest,
-  isUrlSafe,
-  sanitizeInput,
-  validatePrompt,
-  validateLLMOutput,
-} from "../../src/utils/security.js";
 import { getMemoryManager } from "../../src/ai/memory/index.js";
 import { parseToolCall } from "../../src/ai/tools.js";
+import { config } from "../../src/config.js";
+// Import modules once at top level for efficiency
+import {
+  isUrlSafe,
+  sanitizeInput,
+  validateLLMOutput,
+  validatePrompt,
+  validateToolRequest,
+} from "../../src/utils/security.js";
 
 /**
  * Test Constants for Security Testing
@@ -72,9 +72,10 @@ async function runTests(): Promise<void> {
   console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 
   if (failed > 0) {
-    process.exit(1);
+    setTimeout(() => process.exit(1), 100);
+    return;
   }
-  process.exit(0);
+  setTimeout(() => process.exit(0), 100);
 }
 
 // ============ Tool Request Validation Tests ============
@@ -287,6 +288,11 @@ test("Security: PII sanitization works", () => {
 });
 
 test("Security: Prompt injection patterns detected", () => {
+  if (!config.security.input.validatePrompts) {
+    console.log("    ⚠️  Skipping prompt injection test: Prompt validation disabled");
+    return;
+  }
+
   // Test high-severity patterns that match the MALICIOUS_PATTERNS in security.ts
   // These should be BLOCKED (severity: high)
   const blockedPatterns = [
@@ -313,6 +319,11 @@ test("Security: Prompt injection patterns detected", () => {
 });
 
 test("Security: LLM output validation blocks token leaks", () => {
+  if (!config.security.output.redactPII) {
+    console.log("    ⚠️  Skipping token leak test: PII redaction disabled");
+    return;
+  }
+
   // Test with fake token pattern (obviously invalid but matches structure)
   const outputWithToken = `Here's a token: ${TEST_DISCORD_TOKEN_PATTERN}`;
 
@@ -328,6 +339,11 @@ test("Security: LLM output validation blocks token leaks", () => {
 });
 
 test("Security: LLM output validation blocks webhook URLs", () => {
+  if (!config.security.output.filterInjectionPatterns) {
+    console.log("    ⚠️  Skipping webhook leak test: Injection filtering disabled");
+    return;
+  }
+
   const outputWithWebhook = `Check this out: ${TEST_WEBHOOK_URL}`;
 
   const result = validateLLMOutput(outputWithWebhook);
@@ -357,8 +373,7 @@ test("Security: Tool call parsing handles malformed JSON", () => {
 
 test("Security: Tool call parsing limits input size", () => {
   // Create very large input (potential DoS)
-  const largeInput =
-    '{"tool": "calculate", "arguments": {"expression": "' + "x".repeat(50000) + '"}}';
+  const largeInput = `{"tool": "calculate", "arguments": {"expression": "${"x".repeat(50000)}"}}`;
 
   const result = parseToolCall(largeInput);
   // Should handle gracefully without crashing

@@ -1,22 +1,30 @@
-import type { ArgsOf, Client } from "discordx";
-import { Discord, On } from "discordx";
 import {
-  Events,
+  AttachmentBuilder,
   ChannelType,
   type DMChannel,
-  type TextChannel,
+  Events,
+  type Message,
   type NewsChannel,
+  type StageChannel,
+  type TextChannel,
   type ThreadChannel,
   type VoiceChannel,
-  type StageChannel,
-  type Message,
-  AttachmentBuilder,
 } from "discord.js";
+import type { ArgsOf, Client } from "discordx";
+import { Discord, On } from "discordx";
+import { LRUCache } from "lru-cache";
 import { getConversationService } from "../ai/conversation.js";
-import { getRateLimiter, getChannelQueue, formatCooldown } from "../utils/rate-limiter.js";
-import { recordResponseTime } from "../utils/presence.js";
-import { createLogger } from "../utils/logger.js";
 import { config } from "../config.js";
+import {
+  DEDUPE_WINDOW_MS,
+  MAX_DEDUPE_ENTRIES,
+  TYPING_DELAY_MS,
+  TYPING_INTERVAL_MS,
+} from "../constants.js";
+import { createLogger } from "../utils/logger.js";
+import { recordResponseTime } from "../utils/presence.js";
+import { formatCooldown, getChannelQueue, getRateLimiter } from "../utils/rate-limiter.js";
+import { splitMessage } from "../utils/text.js";
 
 const log = createLogger("MessageEvent");
 
@@ -41,94 +49,95 @@ async function getClient(): Promise<Client> {
   return cachedClient;
 }
 
-// Typing indicator delay to feel more natural
-const TYPING_DELAY = 300;
-// How often to refresh typing indicator (Discord typing lasts ~10 seconds)
-const TYPING_INTERVAL = 8_000;
-
-// Deduplication settings
-const DEDUPE_WINDOW_MS = 5000; // 5 seconds
-const MAX_DEDUPE_ENTRIES = 100;
-
 // Message deduplication cache - prevents duplicate responses to rapid messages
 interface DedupeEntry {
+  messageId: string;
   content: string;
   channelId: string;
   authorId: string;
   timestamp: number;
   processing: boolean;
 }
-const recentMessages = new Map<string, DedupeEntry>();
+
+// LRU cache for content-based deduplication (channel:user -> DedupeEntry)
+const recentMessages = new LRUCache<string, DedupeEntry>({
+  max: MAX_DEDUPE_ENTRIES,
+  ttl: DEDUPE_WINDOW_MS,
+});
+
+// LRU cache for message ID deduplication - prevents duplicate event processing
+const processedMessageIds = new LRUCache<string, boolean>({
+  max: MAX_DEDUPE_ENTRIES,
+  ttl: DEDUPE_WINDOW_MS * 2, // Keep IDs a bit longer for safety
+});
 
 // Active processing tracker - prevents concurrent processing for same user/channel
 const activeProcessing = new Set<string>();
 
-/**
- * Clean old dedupe entries periodically
- */
-function cleanDedupeCache(): void {
-  const now = Date.now();
-  for (const [key, entry] of recentMessages) {
-    if (now - entry.timestamp > DEDUPE_WINDOW_MS && !entry.processing) {
-      recentMessages.delete(key);
-    }
-  }
-  // Enforce max size
-  if (recentMessages.size > MAX_DEDUPE_ENTRIES) {
-    const entries = [...recentMessages.entries()].sort((a, b) => a[1].timestamp - b[1].timestamp);
-    const toRemove = entries.slice(0, recentMessages.size - MAX_DEDUPE_ENTRIES);
-    for (const [key] of toRemove) {
-      recentMessages.delete(key);
-    }
-  }
-}
-
-// Clean cache every 30 seconds
-let dedupeCleanupInterval: NodeJS.Timeout | null = null;
-dedupeCleanupInterval = setInterval(cleanDedupeCache, 30000);
+// LRU cache handles TTL and max size cleanup automatically - no manual cleanup interval needed
 
 /**
  * Clean up message deduplication resources
  * Should be called during application shutdown
  */
 export function cleanupMessageDeduplication(): void {
-  if (dedupeCleanupInterval) {
-    clearInterval(dedupeCleanupInterval);
-    dedupeCleanupInterval = null;
-  }
   recentMessages.clear();
   activeProcessing.clear();
+  processedMessageIds.clear();
 }
 
 /**
- * Check if a message is a duplicate of a recent message
+ * Check if a message is a duplicate and atomically record it if not
+ * Uses message ID for true deduplication (handles Discord sending same event twice)
+ * Also checks content-based deduplication for rapid-fire similar messages
+ * Returns true if the message should be skipped (is duplicate)
  */
-function isDuplicateMessage(content: string, channelId: string, authorId: string): boolean {
-  const key = `${channelId}:${authorId}`;
-  const entry = recentMessages.get(key);
-
-  if (entry?.content === content && Date.now() - entry.timestamp < DEDUPE_WINDOW_MS) {
-    log.debug(`Ignoring duplicate message from ${authorId} in ${channelId}`);
+function checkAndRecordMessage(
+  messageId: string,
+  content: string,
+  channelId: string,
+  authorId: string
+): boolean {
+  // First check: Has this exact message ID been processed?
+  if (processedMessageIds.has(messageId)) {
+    log.info(`[DEDUPE] Ignoring duplicate event for message ID ${messageId}`);
     return true;
   }
 
-  return false;
-}
+  // Second check: Is there a recent message with same content from same user in same channel?
+  const contentKey = `${channelId}:${authorId}`;
+  const entry = recentMessages.get(contentKey);
+  if (entry?.content === content && Date.now() - entry.timestamp < DEDUPE_WINDOW_MS) {
+    log.info(
+      `[DEDUPE] Ignoring duplicate content from ${authorId} in ${channelId} (original msg: ${entry.messageId})`
+    );
+    return true;
+  }
 
-/**
- * Record a message for deduplication
- */
-function recordMessage(content: string, channelId: string, authorId: string): void {
-  const key = `${channelId}:${authorId}`;
-  recentMessages.set(key, {
+  // Third check: Is there already a message being processed for this user/channel?
+  if (activeProcessing.has(contentKey)) {
+    log.info(
+      `[DEDUPE] Already processing message for ${authorId} in ${channelId}, skipping msg ${messageId}`
+    );
+    return true;
+  }
+
+  // Not a duplicate - record it atomically
+  log.info(`[DEDUPE] Recording message ${messageId} for processing`);
+  processedMessageIds.set(messageId, true);
+  recentMessages.set(contentKey, {
+    messageId,
     content,
     channelId,
     authorId,
     timestamp: Date.now(),
     processing: true,
   });
-  // Also mark as actively processing
-  activeProcessing.add(key);
+  activeProcessing.add(contentKey);
+
+  // LRU cache handles cleanup automatically - no manual cleanup needed
+
+  return false;
 }
 
 /**
@@ -141,14 +150,6 @@ function markMessageComplete(channelId: string, authorId: string): void {
     entry.processing = false;
   }
   activeProcessing.delete(key);
-}
-
-/**
- * Check if already processing for this user/channel
- */
-function isAlreadyProcessing(channelId: string, authorId: string): boolean {
-  const key = `${channelId}:${authorId}`;
-  return activeProcessing.has(key);
 }
 
 // Channels that support sendTyping
@@ -178,7 +179,7 @@ function startContinuousTyping(channel: TypingChannel): () => void {
         log.debug(`Typing indicator error: ${err instanceof Error ? err.message : String(err)}`);
       });
     }
-  }, TYPING_INTERVAL);
+  }, TYPING_INTERVAL_MS);
 
   // Return a cleanup function
   return () => {
@@ -302,7 +303,8 @@ async function generateAIResponse(
   content: string,
   contextId: string,
   conversationService: ReturnType<typeof getConversationService>,
-  onImageGenerationStart?: () => Promise<void>
+  onImageGenerationStart?: () => Promise<void>,
+  onTyping?: () => Promise<void>
 ): Promise<AIResponseResult> {
   if (config.llm.useOrchestrator) {
     const member = message.guild
@@ -315,7 +317,8 @@ async function generateAIResponse(
       member,
       message.channelId,
       message.guildId ?? undefined,
-      onImageGenerationStart
+      onImageGenerationStart,
+      onTyping
     );
 
     return {
@@ -366,11 +369,15 @@ async function sendAIResponse(
 
   const maxLength = 2000;
   if (response.length <= maxLength) {
+    log.info(
+      `[REPLY-TRACE] sendAIResponse: About to reply with "${response.substring(0, 50)}..." to message ${message.id}`
+    );
     await message.reply({
       content: response,
       files,
       allowedMentions: { repliedUser: true },
     });
+    log.info(`[REPLY-TRACE] sendAIResponse: Reply sent successfully for message ${message.id}`);
     return;
   }
 
@@ -381,12 +388,16 @@ async function sendAIResponse(
     if (!chunk) continue;
 
     if (i === 0) {
+      log.info(`[REPLY-TRACE] sendAIResponse: About to reply chunk ${i} to message ${message.id}`);
       await message.reply({
         content: chunk,
         files,
         allowedMentions: { repliedUser: true },
       });
     } else {
+      log.info(
+        `[REPLY-TRACE] sendAIResponse: About to send chunk ${i} to channel ${message.channelId}`
+      );
       await message.channel.send(chunk);
     }
   }
@@ -430,11 +441,16 @@ export class MessageEvent {
       log.info(`[TEST] Processing webhook message in test channel ${message.channelId}`);
     }
 
-    // Check for duplicate/rapid-fire messages
-    if (this.checkDuplicate(message)) return;
-
-    // Log if user already has a message processing
-    this.logAlreadyProcessing(message);
+    // Atomic check-and-record for deduplication
+    // This prevents race conditions where two events for the same message both get through
+    if (checkAndRecordMessage(message.id, message.content, message.channelId, message.author.id)) {
+      if (config.testing.verboseLogging) {
+        log.info(
+          `[DEDUPE] Skipping duplicate message ${message.id} from ${message.author.username}`
+        );
+      }
+      return;
+    }
 
     // Get client lazily to avoid circular dependency
     const client = await getClient();
@@ -443,7 +459,11 @@ export class MessageEvent {
     await client.executeCommand(message);
 
     // Check if this is a message we should respond to with AI
-    if (!this.shouldRespondWithAI(message, client)) return;
+    if (!this.shouldRespondWithAI(message, client)) {
+      // Not responding with AI - clean up tracking
+      markMessageComplete(message.channelId, message.author.id);
+      return;
+    }
 
     const isDM = message.channel.type === ChannelType.DM;
     const conversationService = getConversationService();
@@ -452,26 +472,30 @@ export class MessageEvent {
 
     // Check if AI is available
     const available = await checkAIAvailability(message, conversationService, isDM);
-    if (!available) return;
+    if (!available) {
+      markMessageComplete(message.channelId, message.author.id);
+      return;
+    }
 
     // Check rate limit (only enforced in channels, lenient in DMs)
     const cooldownRemaining = rateLimiter.checkCooldown(message.author.id, message.channelId, isDM);
     if (cooldownRemaining > 0 && !isDM) {
       await handleRateLimitCooldown(message, cooldownRemaining);
+      markMessageComplete(message.channelId, message.author.id);
       return;
     }
 
     // For channels, check concurrency and queue
     if (!isDM) {
       const acquired = await acquireChannelQueue(message, channelQueue);
-      if (!acquired) return;
+      if (!acquired) {
+        markMessageComplete(message.channelId, message.author.id);
+        return;
+      }
     }
 
     // Record the request for rate limiting
     rateLimiter.recordRequest(message.author.id, message.channelId, isDM);
-
-    // Record message for deduplication tracking
-    recordMessage(message.content, message.channelId, message.author.id);
 
     try {
       await this.processAIRequest(message, isDM, conversationService, channelQueue, client);
@@ -484,20 +508,20 @@ export class MessageEvent {
   /**
    * Handle early exit scenarios (empty content, blocked, empty response)
    * Returns true if we should exit early
+   * Note: Queue slot release and reaction cleanup are handled in finally block
    */
   private async handleEarlyExit(
     message: ArgsOf<"messageCreate">[0],
     result: AIResponseResult,
     content: string,
-    isDM: boolean,
-    channelQueue: ReturnType<typeof getChannelQueue>,
+    _isDM: boolean,
+    _channelQueue: ReturnType<typeof getChannelQueue>,
     stopTyping: () => void
   ): Promise<boolean> {
     // Empty content
     if (!content) {
       stopTyping();
       await message.reply("Hey! What's up? 👋");
-      if (!isDM) channelQueue.releaseSlot(message.channelId);
       return true;
     }
 
@@ -508,7 +532,6 @@ export class MessageEvent {
         content: "🛡️ I couldn't process that message. Could you rephrase it?",
         allowedMentions: { repliedUser: false },
       });
-      if (!isDM) channelQueue.releaseSlot(message.channelId);
       return true;
     }
 
@@ -520,7 +543,6 @@ export class MessageEvent {
         content: "I'm having trouble thinking right now. Please try again in a moment.",
         allowedMentions: { repliedUser: false },
       });
-      if (!isDM) channelQueue.releaseSlot(message.channelId);
       return true;
     }
 
@@ -540,6 +562,20 @@ export class MessageEvent {
   }
 
   /**
+   * Safely remove the queue reaction from a message
+   */
+  private async safeRemoveQueueReaction(
+    message: ArgsOf<"messageCreate">[0],
+    botUserId: string | undefined
+  ): Promise<void> {
+    try {
+      await message.reactions.cache.get("⏳")?.users.remove(botUserId);
+    } catch {
+      // Ignore reaction removal errors
+    }
+  }
+
+  /**
    * Process the AI request after initial validation
    */
   private async processAIRequest(
@@ -553,7 +589,7 @@ export class MessageEvent {
     const stopTyping = startContinuousTyping(message.channel as TypingChannel);
 
     // Small delay to feel more natural
-    await new Promise((resolve) => setTimeout(resolve, TYPING_DELAY));
+    await new Promise((resolve) => setTimeout(resolve, TYPING_DELAY_MS));
 
     // Generate context ID - PER USER even in channels to prevent cross-talk
     const contextId = isDM
@@ -579,6 +615,15 @@ export class MessageEvent {
         }
       };
 
+      // Callback to trigger typing indicator
+      const onTyping = async (): Promise<void> => {
+        try {
+          await (message.channel as TypingChannel).sendTyping();
+        } catch (err) {
+          log.debug(`Typing indicator error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      };
+
       // Get AI response (or empty result for content check)
       const result = content
         ? await generateAIResponse(
@@ -586,7 +631,8 @@ export class MessageEvent {
             content,
             contextId,
             conversationService,
-            onImageGenerationStart
+            onImageGenerationStart,
+            onTyping
           )
         : { response: "" };
 
@@ -612,20 +658,15 @@ export class MessageEvent {
       await this.safeDeleteMessage(imageGenState.message);
 
       // Send the response
-      await sendAIResponse(message, result.response, result.generatedImage, this.splitMessage);
-
-      // Remove queue reaction if we added one
-      try {
-        await message.reactions.cache.get("⏳")?.users.remove(client.user?.id);
-      } catch {
-        // Ignore
-      }
+      await sendAIResponse(message, result.response, result.generatedImage, splitMessage);
     } catch (error) {
       log.error("AI chat error:", error);
       stopTyping();
       await this.safeDeleteMessage(imageGenState.message);
       await this.handleAIError(message, isDM);
     } finally {
+      // Always clean up: remove queue reaction and release slot
+      await this.safeRemoveQueueReaction(message, client.user?.id);
       if (!isDM) {
         channelQueue.releaseSlot(message.channelId);
       }
@@ -661,35 +702,6 @@ export class MessageEvent {
   }
 
   /**
-   * Check for duplicate messages
-   */
-  private checkDuplicate(message: ArgsOf<"messageCreate">[0]): boolean {
-    if (isDuplicateMessage(message.content, message.channelId, message.author.id)) {
-      if (config.testing.verboseLogging) {
-        log.info(
-          `[DEDUPE] Skipping duplicate message from ${message.author.username} in ${message.channelId}`
-        );
-      }
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Log if user already has a message processing
-   */
-  private logAlreadyProcessing(message: ArgsOf<"messageCreate">[0]): void {
-    if (
-      isAlreadyProcessing(message.channelId, message.author.id) &&
-      config.testing.verboseLogging
-    ) {
-      log.info(
-        `[DEDUPE] User ${message.author.username} already has a message processing in ${message.channelId}, queueing will handle it`
-      );
-    }
-  }
-
-  /**
    * Determine if the bot should respond to this message with AI
    * In channels: Only responds when @mentioned (or in test channels when TEST_MODE=true)
    * In DMs: Always responds
@@ -719,35 +731,6 @@ export class MessageEvent {
     }
 
     return false;
-  }
-
-  /**
-   * Split a message into chunks for Discord's character limit
-   */
-  private splitMessage(text: string, maxLength: number): string[] {
-    const chunks: string[] = [];
-    let remaining = text;
-
-    while (remaining.length > 0) {
-      if (remaining.length <= maxLength) {
-        chunks.push(remaining);
-        break;
-      }
-
-      // Find a good break point
-      let breakPoint = remaining.lastIndexOf("\n", maxLength);
-      if (breakPoint === -1 || breakPoint < maxLength / 2) {
-        breakPoint = remaining.lastIndexOf(" ", maxLength);
-      }
-      if (breakPoint === -1 || breakPoint < maxLength / 2) {
-        breakPoint = maxLength;
-      }
-
-      chunks.push(remaining.slice(0, breakPoint));
-      remaining = remaining.slice(breakPoint).trim();
-    }
-
-    return chunks;
   }
 
   @On({ event: Events.MessageReactionAdd })

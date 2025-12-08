@@ -6,11 +6,11 @@
  * Uses StreamableHTTPClientTransport for HTTP connections (MCP protocol 2025-03-26+)
  */
 
+import { readFile } from "node:fs/promises";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod/v4";
-import { readFile } from "node:fs/promises";
 import { config } from "../config.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -483,7 +483,6 @@ export class McpClientManager {
       case "admin-only":
         // Admin can see public and admin-only
         return allTools.filter((t) => t.permissions === "public" || t.permissions === "admin-only");
-      case "public":
       default:
         // Public only sees public tools
         return allTools.filter((t) => t.permissions === "public");

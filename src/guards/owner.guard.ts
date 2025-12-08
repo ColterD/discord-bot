@@ -4,12 +4,13 @@
  * Expandable permission system for future role-based access
  */
 
-import type { GuardFunction } from "discordx";
 import type {
   CommandInteraction,
   ContextMenuCommandInteraction,
   MessageComponentInteraction,
 } from "discord.js";
+import type { GuardFunction } from "discordx";
+import { config } from "../config.js";
 
 // Permission levels (expandable)
 export enum PermissionLevel {
@@ -26,38 +27,27 @@ interface PermissionConfig {
   moderatorIds: Set<string>;
 }
 
-// Parse comma-separated IDs from environment
-function parseIdList(envVar: string | undefined): Set<string> {
-  if (!envVar) return new Set();
-  return new Set(
-    envVar
-      .split(",")
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0)
-  );
-}
-
-// Load configuration
-function loadConfig(): PermissionConfig {
+// Load configuration from centralized config
+function loadPermissionConfig(): PermissionConfig {
   return {
-    ownerIds: parseIdList(process.env.BOT_OWNER_IDS),
-    adminIds: parseIdList(process.env.BOT_ADMIN_IDS),
-    moderatorIds: parseIdList(process.env.BOT_MODERATOR_IDS),
+    ownerIds: new Set(config.security.ownerIds),
+    adminIds: new Set(config.security.adminIds),
+    moderatorIds: new Set(config.security.moderatorIds),
   };
 }
 
-let config: PermissionConfig | null = null;
+let permissionConfig: PermissionConfig | null = null;
 
-function getConfig(): PermissionConfig {
-  config ??= loadConfig();
-  return config;
+function getPermissionConfig(): PermissionConfig {
+  permissionConfig ??= loadPermissionConfig();
+  return permissionConfig;
 }
 
 /**
  * Get a user's permission level
  */
 export function getUserPermissionLevel(userId: string): PermissionLevel {
-  const cfg = getConfig();
+  const cfg = getPermissionConfig();
 
   if (cfg.ownerIds.has(userId)) return PermissionLevel.Owner;
   if (cfg.adminIds.has(userId)) return PermissionLevel.Admin;
@@ -76,7 +66,7 @@ export function hasPermissionLevel(userId: string, requiredLevel: PermissionLeve
  * Reload configuration (useful if env changes)
  */
 export function reloadPermissionConfig(): void {
-  config = loadConfig();
+  permissionConfig = loadPermissionConfig();
 }
 
 type SupportedInteraction =

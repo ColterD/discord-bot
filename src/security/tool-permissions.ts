@@ -7,7 +7,7 @@
  */
 
 import { config } from "../config.js";
-import { PermissionLevel, getUserPermissionLevel } from "../guards/owner.guard.js";
+import { getUserPermissionLevel, PermissionLevel } from "../guards/owner.guard.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ToolPermissions");

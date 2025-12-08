@@ -1,12 +1,12 @@
-import type { GuardFunction, ArgsOf, SimpleCommandMessage } from "discordx";
 import {
-  Message,
+  type AnySelectMenuInteraction,
   type ButtonInteraction,
   type CommandInteraction,
   type ContextMenuCommandInteraction,
+  Message,
   type ModalSubmitInteraction,
-  type AnySelectMenuInteraction,
 } from "discord.js";
+import type { ArgsOf, GuardFunction, SimpleCommandMessage } from "discordx";
 import { config } from "../config.js";
 
 /**
@@ -25,7 +25,7 @@ export const NotBot: GuardFunction<
 > = async (arg, _client, next) => {
   const argObj = Array.isArray(arg) ? arg[0] : arg;
 
-  let user;
+  let user: { bot?: boolean | null } | undefined;
   let isWebhookInTestChannel = false;
 
   if (argObj instanceof Message) {

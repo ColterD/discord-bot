@@ -47,11 +47,15 @@ async function checkOllama(): Promise<boolean> {
 async function checkValkey(): Promise<boolean> {
   try {
     // Simple TCP connect check to Valkey port
-    const url = process.env.VALKEY_URL ?? "valkey://valkey:6379";
+    // Use localhost for local development, Docker service name for production
+    const url =
+      process.env.VALKEY_URL ??
+      (process.env.NODE_ENV === "production" ? "valkey://valkey:6379" : "valkey://localhost:6379");
     const match = /:\/\/([^:]+):(\d+)/.exec(url);
     if (!match) return false;
 
     const [, host, port] = match;
+    if (!host || !port) return false;
 
     return new Promise((resolve) => {
       const socket = new net.Socket();
@@ -72,7 +76,7 @@ async function checkValkey(): Promise<boolean> {
         resolve(false);
       });
 
-      socket.connect({ port: Number.parseInt(port!, 10), host });
+      socket.connect({ port: Number.parseInt(port, 10), host });
     });
   } catch {
     return false;

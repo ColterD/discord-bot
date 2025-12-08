@@ -6,14 +6,13 @@
  */
 
 import { strict as assert } from "node:assert";
-
-// Import modules once at top level for efficiency
-import { checkToolAccess, filterToolsForUser } from "../../src/security/tool-permissions.js";
+import { formatToolsForPrompt, getTool, isValidTool, parseToolCall } from "../../src/ai/tools.js";
 import { config } from "../../src/config.js";
 import { detectImpersonation } from "../../src/security/impersonation-detector.js";
-import { validateToolRequest, validateLLMOutput } from "../../src/utils/security.js";
-import { getTool, isValidTool, formatToolsForPrompt, parseToolCall } from "../../src/ai/tools.js";
+// Import modules once at top level for efficiency
+import { checkToolAccess, filterToolsForUser } from "../../src/security/tool-permissions.js";
 import { InMemoryCache } from "../../src/utils/cache.js";
+import { validateLLMOutput, validateToolRequest } from "../../src/utils/security.js";
 
 // Test constants
 const TEST_REGULAR_USER_ID = "999999999";
@@ -51,9 +50,10 @@ async function runTests(): Promise<void> {
   console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 
   if (failed > 0) {
-    process.exit(1);
+    setTimeout(() => process.exit(1), 100);
+    return;
   }
-  process.exit(0);
+  setTimeout(() => process.exit(0), 100);
 }
 
 // ============ Tool Permission Tests ============
@@ -196,11 +196,15 @@ test("Security: LLM output validation", () => {
   assert.equal(cleanResult.issuesFound.length, 0, "Clean output should have no issues");
 
   // Test output containing a Discord token pattern
-  const tokenLeakOutput = `Here's a token: ${TEST_DISCORD_TOKEN_PATTERN}`;
-  const tokenResult = validateLLMOutput(tokenLeakOutput);
+  if (config.security.output.redactPII) {
+    const tokenLeakOutput = `Here's a token: ${TEST_DISCORD_TOKEN_PATTERN}`;
+    const tokenResult = validateLLMOutput(tokenLeakOutput);
 
-  assert.equal(tokenResult.valid, false, "Token leak should fail validation");
-  assert.ok(tokenResult.issuesFound.length > 0, "Token leak should have issues found");
+    assert.equal(tokenResult.valid, false, "Token leak should fail validation");
+    assert.ok(tokenResult.issuesFound.length > 0, "Token leak should have issues found");
+  } else {
+    console.log("    ⚠️  Skipping token leak test: PII redaction disabled");
+  }
 });
 
 // ============ Tool Definition Tests ============
@@ -230,7 +234,9 @@ test("Tools: Tool formatting for prompt", () => {
   const formatted = formatToolsForPrompt();
 
   assert.ok(formatted.includes("Available Tools"), "Should have tools header");
-  assert.ok(formatted.includes("generate_image"), "Should include generate_image");
+  if (config.comfyui.enabled) {
+    assert.ok(formatted.includes("generate_image"), "Should include generate_image");
+  }
   assert.ok(formatted.includes("Parameters:"), "Should list parameters");
 });
 

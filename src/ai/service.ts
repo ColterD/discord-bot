@@ -1,8 +1,9 @@
-import axios, { type AxiosInstance, type AxiosError } from "axios";
+import axios, { type AxiosError, type AxiosInstance } from "axios";
 import config from "../config.js";
+import { delay } from "../utils/async.js";
 import { createLogger } from "../utils/logger.js";
-import { wrapUserInput, validateLLMOutput, buildSecureSystemPrompt } from "../utils/security.js";
-import { getVRAMManager } from "../utils/vram-manager.js";
+import { buildSecureSystemPrompt, validateLLMOutput, wrapUserInput } from "../utils/security.js";
+import { getVRAMManager } from "../utils/vram/index.js";
 
 const log = createLogger("AI");
 
@@ -372,9 +373,101 @@ export class AIService {
   }
 
   /**
+   * Send unload request to Ollama
+   */
+  private async sendUnloadRequest(useEmptyPrompt = false): Promise<void> {
+    const payload: Record<string, unknown> = {
+      model: this.model,
+      stream: false,
+      keep_alive: 0,
+    };
+
+    if (useEmptyPrompt) {
+      payload.prompt = "";
+    }
+
+    await this.client.post("/api/generate", payload);
+  }
+
+  /**
+   * Mark model as sleeping and notify listeners
+   */
+  private markAsAsleep(): void {
+    this.isAsleep = true;
+    this.isPreloaded = false;
+    log.info("Model is now sleeping (unloaded from GPU)");
+
+    // Notify VRAM manager that LLM is unloaded
+    const vramManager = getVRAMManager();
+    vramManager.notifyLLMUnloaded();
+
+    // Notify listeners
+    if (sleepStateCallback) {
+      sleepStateCallback(true);
+    }
+  }
+
+  /**
+   * Attempt to unload the model with verification
+   */
+  private async attemptUnload(): Promise<void> {
+    log.info(`Putting model ${this.model} to sleep after inactivity...`);
+
+    // Send keep_alive: 0 to immediately unload the model
+    await this.sendUnloadRequest();
+    await delay(1000);
+
+    // Verify the model actually unloaded
+    const stillLoaded = await this.isModelLoaded();
+    if (stillLoaded) {
+      await this.retryUnload();
+    } else {
+      log.info("Model verified unloaded from GPU");
+    }
+
+    this.markAsAsleep();
+  }
+
+  /**
+   * Retry unloading the model with empty prompt
+   */
+  private async retryUnload(): Promise<void> {
+    log.warn("Model still loaded after unload request, retrying...");
+
+    await this.sendUnloadRequest(true);
+    await delay(1000);
+
+    const stillLoaded = await this.isModelLoaded();
+    if (stillLoaded) {
+      log.warn("Model still loaded after retry - marking as asleep anyway");
+    } else {
+      log.info("Model verified unloaded after retry");
+    }
+  }
+
+  /**
+   * Handle sleep errors - check if model is already unloaded
+   */
+  private handleSleepError(error: unknown): void {
+    const formatted = formatUnknownError(error);
+    log.warn(`Failed to put model to sleep: ${formatted}`);
+
+    // If Ollama responds with a 404 or similar indicating the model
+    // isn't loaded, treat it as already asleep to avoid being stuck.
+    if (axios.isAxiosError(error) && error.response) {
+      const status = error.response.status;
+      if (status === 404 || status === 400) {
+        log.warn(`Model ${this.model} appears already unloaded; marking as asleep.`);
+        this.markAsAsleep();
+      }
+    }
+  }
+
+  /**
    * Put the model to sleep (unload from GPU memory)
    * Best-effort; state may be out of sync if Ollama behavior changes.
    * Notifies VRAM manager when model is unloaded.
+   * Now verifies the model actually unloaded before marking as asleep.
    */
   async sleep(): Promise<void> {
     if (this.isAsleep || this.disposed) return;
@@ -392,55 +485,29 @@ export class AIService {
       }
 
       try {
-        log.info(`Putting model ${this.model} to sleep after inactivity...`);
-
-        // Send keep_alive: 0 to immediately unload the model
-        await this.client.post("/api/generate", {
-          model: this.model,
-          stream: false,
-          keep_alive: 0,
-        });
-
-        this.isAsleep = true;
-        this.isPreloaded = false;
-        log.info("Model is now sleeping (unloaded from GPU)");
-
-        // Notify VRAM manager that LLM is unloaded
-        const vramManager = getVRAMManager();
-        vramManager.notifyLLMUnloaded();
-
-        // Notify listeners
-        if (sleepStateCallback) {
-          sleepStateCallback(true);
-        }
+        await this.attemptUnload();
       } catch (error) {
-        const formatted = formatUnknownError(error);
-        log.warn(`Failed to put model to sleep: ${formatted}`);
-
-        // If Ollama responds with a 404 or similar indicating the model
-        // isn't loaded, treat it as already asleep to avoid being stuck.
-        if (axios.isAxiosError(error) && error.response) {
-          const status = error.response.status;
-          if (status === 404 || status === 400) {
-            this.isAsleep = true;
-            this.isPreloaded = false;
-            log.warn(`Model ${this.model} appears already unloaded; marking as asleep.`);
-
-            // Notify VRAM manager
-            const vramManager = getVRAMManager();
-            vramManager.notifyLLMUnloaded();
-
-            if (sleepStateCallback) {
-              sleepStateCallback(true);
-            }
-          }
-        }
+        this.handleSleepError(error);
       } finally {
         this.sleepPromise = null;
       }
     })();
 
     await this.sleepPromise;
+  }
+
+  /**
+   * Check if the model is currently loaded in Ollama
+   */
+  private async isModelLoaded(): Promise<boolean> {
+    try {
+      const response = await this.client.get<{ models: { name: string }[] }>("/api/ps");
+      const loadedModels = response.data.models ?? [];
+      return loadedModels.some((m) => m.name === this.model || m.name.startsWith(this.model));
+    } catch {
+      // If we can't check, assume not loaded
+      return false;
+    }
   }
 
   /**
@@ -626,6 +693,37 @@ export class AIService {
   }
 
   /**
+   * Build Ollama performance options from config.
+   * These options are applied to all API calls for optimal inference speed.
+   */
+  private getPerformanceOptions(): Record<string, unknown> {
+    const perf = config.llm.performance;
+    const options: Record<string, unknown> = {
+      // Context window size - critical for performance
+      num_ctx: config.llm.heretic.contextLength,
+      // Batch size for prompt processing
+      num_batch: perf.numBatch,
+      // Flash attention for faster inference
+      flash_attn: perf.flashAttention,
+      // Memory-mapped files for faster loading
+      mmap: perf.mmap,
+    };
+
+    // Only set num_thread if explicitly configured (0 = auto-detect)
+    if (perf.numThread > 0) {
+      options.num_thread = perf.numThread;
+    }
+
+    // Memory locking (requires elevated permissions)
+    if (perf.mlock) {
+      options.mlock = true;
+    }
+
+    log.debug(`Performance options: ${JSON.stringify(options)}`);
+    return options;
+  }
+
+  /**
    * Clamp and sanitize numeric chat options.
    */
   private normalizeOptions(options: ChatOptions) {
@@ -694,6 +792,7 @@ export class AIService {
           stream: false,
           keep_alive: keepAlive,
           options: {
+            ...this.getPerformanceOptions(),
             temperature,
             num_predict: maxTokens,
             stop: ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "Human:", "User:"],
@@ -820,6 +919,7 @@ export class AIService {
           stream: false,
           keep_alive: keepAlive,
           options: {
+            ...this.getPerformanceOptions(),
             temperature,
             num_predict: maxTokens,
             stop: ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "Human:", "User:"],
@@ -895,6 +995,7 @@ export class AIService {
           stream: false,
           keep_alive: keepAlive,
           options: {
+            ...this.getPerformanceOptions(),
             temperature,
             num_predict: maxTokens,
             stop: ["<|im_end|>", "<|im_start|>", "<|endoftext|>", "Human:", "User:"],
@@ -969,6 +1070,7 @@ export class AIService {
           stream: false,
           keep_alive: keepAlive,
           options: {
+            ...this.getPerformanceOptions(),
             temperature,
             num_predict: maxTokens,
           },

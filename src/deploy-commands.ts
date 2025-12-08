@@ -68,8 +68,14 @@ async function deployCommands(): Promise<void> {
     log.info(`   Propagation: ${isProduction ? "Up to 1 hour" : "Instant"}`);
   } catch (error) {
     log.error("Failed to deploy commands:", error);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
 }
 
 await deployCommands();
+
+// Allow pending I/O to complete before exit
+setTimeout(() => {
+  process.exit(0);
+}, 100);

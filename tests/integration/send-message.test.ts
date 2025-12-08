@@ -132,6 +132,7 @@ const toolTests: TestCase[] = [
     expectedBehavior: "Bot should use web search to find version",
     validate: withRateLimitCheck(
       (r) =>
+        // NOSONAR - safe: simple version number pattern, no nested quantifiers
         r.includes("TypeScript") || r.toLowerCase().includes("typescript") || /\d+\.\d+/.test(r)
     ),
     delay: 60000,

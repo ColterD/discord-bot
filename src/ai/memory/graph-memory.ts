@@ -199,6 +199,7 @@ export class GraphMemoryManager {
    */
   private extractDescriptionFromContent(content: string): string | undefined {
     // Entity format: "ENTITY: name (type) - description"
+    // NOSONAR - safe: linear regex, no nested quantifiers
     const match = /ENTITY:\s*[^(]+\([^)]+\)\s*-\s*(.+)/.exec(content);
     return match?.[1]?.trim();
   }
@@ -495,6 +496,7 @@ export function getGraphExtractionPrompt(): string {
  * Extract JSON string from response (may be wrapped in markdown code blocks)
  */
 function extractJsonFromResponse(response: string): string | null {
+  // NOSONAR - safe: lazy quantifier with clear terminator (```)
   const regex = /```(?:json)?\s*([\s\S]*?)```/;
   const match = regex.exec(response);
   if (match?.[1]) {

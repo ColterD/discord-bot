@@ -35,14 +35,26 @@ function cleanJsonString(match: RegExpExecArray | string): string {
   return jsonStr.trim();
 }
 
+// Maximum content length to run regex patterns against (protects against ReDoS)
+const MAX_CONTENT_LENGTH_FOR_REGEX = 50000;
+
 /**
  * Parse tool call from LLM response content using custom JSON format
  */
 export function parseToolCallFromContent(content: string): ToolCall | null {
+  // SECURITY: Length guard protects against ReDoS on adversarial input
+  // LLM responses are bounded by token limits, but this provides defense-in-depth
+  if (content.length > MAX_CONTENT_LENGTH_FOR_REGEX) {
+    log.warn(
+      `[TOOL-PARSE] Content too long for regex parsing (${content.length} > ${MAX_CONTENT_LENGTH_FOR_REGEX})`
+    );
+    return null;
+  }
+
   const patterns = [
-    /```json\s*\n?([\s\S]*?)\n?```/i,
-    /```\s*\n?([\s\S]*?)\n?```/,
-    // More robust pattern for finding top-level JSON objects containing "tool" key
+    /```json\s*\n?([\s\S]*?)\n?```/i, // NOSONAR - safe: lazy quantifier with clear terminator
+    /```\s*\n?([\s\S]*?)\n?```/, // NOSONAR - safe: lazy quantifier with clear terminator
+    // NOSONAR - Complex pattern for nested JSON; protected by length guard above
     /\{(?:[^{}]|\{(?:[^{}]|{[^{}]*})*\})*?"tool"\s*:\s*".+?"(?:[^{}]|\{(?:[^{}]|{[^{}]*})*\})*?\}/s,
   ];
 

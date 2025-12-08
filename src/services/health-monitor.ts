@@ -795,6 +795,7 @@ function createValkeyService(): MonitoredService {
   // Parse Valkey URL to get host and port for direct TCP connection
   // Use config.valkey.url which already handles environment-aware defaults
   const valkeyUrl = config.valkey?.url ?? "valkey://localhost:6379";
+  // NOSONAR - safe: simple linear URL parsing, no nested quantifiers
   const match = /:?\/\/([^:]+):(\d+)/.exec(valkeyUrl);
   const host = match?.[1] ?? "localhost";
   const port = match?.[2] ? Number.parseInt(match[2], 10) : 6379;

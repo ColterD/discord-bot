@@ -20,7 +20,6 @@ export {
   getToolNotFoundMessage,
   getToolPermission,
   isToolVisibleToUser,
-  logToolAccess,
   type ToolAccessResult,
   ToolPermission,
   type ToolWithPermission,

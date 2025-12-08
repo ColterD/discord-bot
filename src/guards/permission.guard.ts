@@ -48,5 +48,3 @@ export function PermissionGuard(
     await next();
   };
 }
-
-export default PermissionGuard;

@@ -147,5 +147,3 @@ export function RequirePermissionLevel(
     await next();
   };
 }
-
-export default OwnerGuard;

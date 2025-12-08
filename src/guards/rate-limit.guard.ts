@@ -105,5 +105,3 @@ export function cleanupRateLimitGuard(): void {
     cleanupInterval = null;
   }
 }
-
-export default RateLimitGuard;

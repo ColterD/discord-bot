@@ -67,9 +67,7 @@ jobs:
           NODE_ENV: test
           VALKEY_URL: redis://localhost:6379
           CHROMADB_HOST: http://localhost:8000
-          # Disable AI services for integration tests (mock them)
-          OLLAMA_HOST: ""
-          COMFYUI_HOST: ""
+          # AI services use defaults - tests should mock/skip when unavailable
 
       - name: Upload test results
         if: always()

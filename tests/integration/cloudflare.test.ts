@@ -67,7 +67,8 @@ async function testRouterModel(ctx: TestContext): Promise<void> {
   printHeader(1, "Router Model (Granite 4.0 H Micro)");
 
   const routerUrl = `https://api.cloudflare.com/client/v4/accounts/${ctx.accountId}/ai/run/${ctx.routerModel}`;
-  console.log(`URL: ${routerUrl}\n`);
+  // codeql[js/clear-text-logging] - Intentional debug logging in test file
+  console.log(`URL: ${routerUrl.replace(ctx.accountId, ctx.accountId.slice(0, 8) + "...")}\n`);
 
   try {
     const routerResponse = await fetch(routerUrl, {
@@ -105,7 +106,8 @@ async function testEmbeddingModel(ctx: TestContext): Promise<void> {
   printHeader(2, "Embedding Model (Qwen3 0.6B)");
 
   const embedUrl = `https://api.cloudflare.com/client/v4/accounts/${ctx.accountId}/ai/run/${ctx.embeddingModel}`;
-  console.log(`URL: ${embedUrl}\n`);
+  // codeql[js/clear-text-logging] - Intentional debug logging in test file
+  console.log(`URL: ${embedUrl.replace(ctx.accountId, ctx.accountId.slice(0, 8) + "...")}\n`);
 
   try {
     const embedResponse = await fetch(embedUrl, {
@@ -220,6 +222,7 @@ function printConfig(ctx: TestContext): void {
   console.log("╚══════════════════════════════════════════════════════════════╝\n");
 
   console.log("Configuration:");
+  // codeql[js/clear-text-logging] - Already redacted, showing only first 8 chars
   console.log(`  Account ID: ${ctx.accountId.slice(0, 8)}...`);
   console.log(`  API Token: ✓ SET`);
   console.log(`  Router Model: ${ctx.routerModel}`);
@@ -241,6 +244,7 @@ function loadConfig(): TestContext | null {
     console.log("║         Cloudflare Workers AI Validation Script              ║");
     console.log("╚══════════════════════════════════════════════════════════════╝\n");
     console.log("Configuration:");
+    // codeql[js/clear-text-logging] - Already redacted, showing only first 8 chars
     console.log(`  Account ID: ${accountId ? `${accountId.slice(0, 8)}...` : "NOT SET"}`);
     console.log(`  API Token: ${apiToken ? "✓ SET" : "✗ NOT SET"}`);
     console.error("\n❌ Missing CLOUDFLARE_ACCOUNT_ID or CLOUDFLARE_API_TOKEN in .env");

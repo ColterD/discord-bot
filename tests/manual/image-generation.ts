@@ -271,6 +271,7 @@ async function main(): Promise<void> {
     );
 
     const outputPath = `tests/output_${Date.now()}.png`;
+    // codeql[js/http-to-file-access] - Intentional test: save generated image from local ComfyUI
     writeFileSync(outputPath, imageBuffer);
     console.log(`💾 Saved to: ${outputPath}`);
     console.log(`📊 Size: ${(imageBuffer.length / 1024).toFixed(1)} KB`);

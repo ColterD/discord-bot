@@ -190,7 +190,8 @@ describe("Direct Cloudflare API Test", () => {
 
       const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${model}`;
 
-      console.log(`Testing URL: ${url}`);
+      // codeql[js/clear-text-logging] - Intentional debug logging in test file
+      console.log(`Testing URL: ${url.replace(accountId, accountId.slice(0, 8) + "...")}`);
 
       const response = await fetch(url, {
         method: "POST",

@@ -10,10 +10,19 @@
  * Each user can only access their own memories.
  */
 
-import { getChromaClient, type MemoryDocument } from "./chroma.js";
-import { createLogger } from "../../utils/logger.js";
 import { config } from "../../config.js";
-import { conversationStore, type ConversationMessage } from "./conversation-store.js";
+import {
+  MEMORY_IMPORTANCE_EPISODIC_DEFAULT,
+  MEMORY_IMPORTANCE_EPISODIC_SUBSTANTIVE,
+  MEMORY_IMPORTANCE_LOW_VALUE,
+  MEMORY_IMPORTANCE_PREFERENCE,
+  MEMORY_IMPORTANCE_PROCEDURAL,
+  MEMORY_IMPORTANCE_SHORT_MESSAGE,
+  MEMORY_IMPORTANCE_USER_PROFILE,
+} from "../../constants.js";
+import { createLogger } from "../../utils/logger.js";
+import { getChromaClient, type MemoryDocument } from "./chroma.js";
+import { type ConversationMessage, conversationStore } from "./conversation-store.js";
 
 const log = createLogger("MemoryManager");
 
@@ -23,6 +32,11 @@ export const BOT_USER_ID = "bot";
 /**
  * Pattern sets for memory classification
  * Used to determine memory type and importance
+ *
+ * Memory types follow ENGRAM 3-type architecture:
+ * - Episodic: Past events and conversations
+ * - Semantic: Facts and knowledge (user_profile, fact)
+ * - Procedural: How to interact with the user (preferences, communication style)
  */
 const MEMORY_PATTERNS = {
   // Patterns that indicate user preferences (highest importance)
@@ -41,6 +55,23 @@ const MEMORY_PATTERNS = {
     /\bi'm (?:a|an|from)\b/i,
     /\bi (?:was|used to|grew up)\b/i,
     /\bi've (?:been|worked|lived)\b/i,
+  ],
+  // Patterns that indicate procedural memory (how to interact with user)
+  // These capture communication style preferences and interaction patterns
+  procedural: [
+    // Response style preferences
+    /\b(?:be|keep it|make it|stay) (?:brief|concise|short|detailed|thorough)\b/i,
+    /\b(?:don't|do not|please|can you) (?:explain|elaborate|be verbose|give (?:me )?examples)\b/i,
+    /\b(?:more|less) (?:formal|casual|technical|simple)\b/i,
+    // Communication format preferences
+    /\b(?:use|prefer|like) (?:bullet points|lists|code blocks|examples)\b/i,
+    /\b(?:skip|no need for|don't need) (?:the )?(?:intro|introduction|explanation|preamble)\b/i,
+    /\bjust (?:give me|show me|tell me)\b/i,
+    // Interaction style
+    /\b(?:ask me|check with me|confirm) (?:before|first)\b/i,
+    /\bdon't assume\b/i,
+    /\balways (?:ask|include|show)\b/i,
+    /\bnever (?:ask|include|show)\b/i,
   ],
   // Patterns that indicate low-value content
   lowValue: [
@@ -142,11 +173,12 @@ export class MemoryManager {
   /**
    * Classify a message to determine memory type and importance
    *
-   * Uses heuristics to identify:
-   * - User preferences (high importance, stored as user_profile)
-   * - Facts about the user (high importance, stored as fact)
-   * - Meaningful conversations (medium importance, stored as episodic)
-   * - Low-value chatter (low importance, may be filtered out)
+   * Uses heuristics to identify (ENGRAM 3-type pattern):
+   * - Procedural: How user wants to be responded to (highest importance)
+   * - Preferences: What user likes/dislikes (high importance)
+   * - Facts/User Profile: Facts about the user (high importance)
+   * - Episodic: Meaningful conversations (medium importance)
+   * - Low-value: Chatter (low importance, may be filtered out)
    */
   private classifyMemory(
     content: string,
@@ -154,31 +186,36 @@ export class MemoryManager {
   ): { type: MemoryDocument["metadata"]["type"]; importance: number } {
     // Check for low-value content first
     if (this.matchesAnyPattern(content.trim(), MEMORY_PATTERNS.lowValue)) {
-      return { type: "episodic", importance: 0.1 };
+      return { type: "episodic", importance: MEMORY_IMPORTANCE_LOW_VALUE };
     }
 
     // Very short messages are usually low value
     if (content.length < 20) {
-      return { type: "episodic", importance: 0.2 };
+      return { type: "episodic", importance: MEMORY_IMPORTANCE_SHORT_MESSAGE };
     }
 
-    // Check for preferences and facts (user messages only)
+    // Check for preferences, facts, and procedural (user messages only)
     if (role === "user") {
+      // Procedural memories (how to interact) are highest priority
+      // These tell us HOW to respond, not just what the user likes
+      if (this.matchesAnyPattern(content, MEMORY_PATTERNS.procedural)) {
+        return { type: "procedural", importance: MEMORY_IMPORTANCE_PROCEDURAL };
+      }
       if (this.matchesAnyPattern(content, MEMORY_PATTERNS.preference)) {
-        return { type: "preference", importance: 0.9 };
+        return { type: "preference", importance: MEMORY_IMPORTANCE_PREFERENCE };
       }
       if (this.matchesAnyPattern(content, MEMORY_PATTERNS.fact)) {
-        return { type: "user_profile", importance: 0.8 };
+        return { type: "user_profile", importance: MEMORY_IMPORTANCE_USER_PROFILE };
       }
     }
 
     // Substantive content based on length
     if (content.length > 100 || (role === "user" && content.length > 50)) {
-      return { type: "episodic", importance: 0.5 };
+      return { type: "episodic", importance: MEMORY_IMPORTANCE_EPISODIC_SUBSTANTIVE };
     }
 
     // Default: low-medium importance episodic
-    return { type: "episodic", importance: 0.35 };
+    return { type: "episodic", importance: MEMORY_IMPORTANCE_EPISODIC_DEFAULT };
   }
 
   /**
@@ -449,7 +486,11 @@ export class MemoryManager {
       activeTokens * charsPerToken
     );
 
-    // Tier 2: User Profile - search for user preferences and facts
+    // Tier 2a: Procedural memories - HOW to interact with this user (ENGRAM pattern)
+    // These are highest priority as they directly affect response style
+    const proceduralMemories = await this.searchMemories(userId, currentQuery, 3, ["procedural"]);
+
+    // Tier 2b: User Profile - search for user preferences and facts
     // Use specific memory types for more accurate retrieval
     const userProfileMemories = await this.searchMemories(
       userId,
@@ -458,10 +499,22 @@ export class MemoryManager {
       ["user_profile", "preference", "fact"] // Only profile-type memories
     );
 
+    let proceduralContext = "";
+    if (proceduralMemories.length > 0) {
+      const proceduralLines = proceduralMemories.map((m) => `• ${m.memory}`).join("\n");
+      proceduralContext = this.trimString(
+        proceduralLines,
+        Math.floor(profileTokens * 0.3 * charsPerToken)
+      );
+    }
+
     let profileContext = "";
     if (userProfileMemories.length > 0) {
       const profileLines = userProfileMemories.map((m) => `• ${m.memory}`).join("\n");
-      profileContext = this.trimString(profileLines, profileTokens * charsPerToken);
+      profileContext = this.trimString(
+        profileLines,
+        Math.floor(profileTokens * 0.7 * charsPerToken)
+      );
     }
 
     // Tier 3: Episodic Sessions - search past conversations
@@ -485,6 +538,11 @@ export class MemoryManager {
 
     // Build system context
     const contextParts: string[] = [];
+
+    // Procedural context comes first - it affects HOW to respond
+    if (proceduralContext) {
+      contextParts.push(`## How This User Prefers To Interact\n${proceduralContext}`);
+    }
 
     if (profileContext) {
       contextParts.push(`## About This User\n${profileContext}`);
@@ -539,7 +597,7 @@ export class MemoryManager {
    */
   private trimString(str: string, maxChars: number): string {
     if (str.length <= maxChars) return str;
-    return str.slice(0, maxChars - 3) + "...";
+    return `${str.slice(0, maxChars - 3)}...`;
   }
 
   /**

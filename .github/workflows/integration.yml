@@ -67,6 +67,9 @@ jobs:
           NODE_ENV: test
           VALKEY_URL: redis://localhost:6379
           CHROMADB_HOST: http://localhost:8000
+          # Dummy Discord credentials for test runner (not used for actual connections)
+          DISCORD_TOKEN: test-token-for-ci
+          DISCORD_CLIENT_ID: "123456789012345678"
           # AI services use defaults - tests should mock/skip when unavailable
 
       - name: Upload test results

@@ -71,7 +71,7 @@ export class AIControlService {
       };
       const models = data.models || [];
       const modelLoaded = models.some(
-        (m) => m.name === this.modelName || m.name.startsWith(this.modelName + ":")
+        (m) => m.name === this.modelName || m.name.startsWith(`${this.modelName}:`)
       );
 
       return {

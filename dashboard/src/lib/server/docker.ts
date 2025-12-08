@@ -223,12 +223,68 @@ export async function restartContainer(name: string): Promise<void> {
 }
 
 /**
- * Get container logs
+ * Structured log entry
+ */
+export interface LogEntry {
+  timestamp: string;
+  message: string;
+  stream: 'stdout' | 'stderr';
+}
+
+/**
+ * Parse Docker multiplexed log buffer into structured entries
+ * Docker logs have an 8-byte header: [stream, 0, 0, 0, size1, size2, size3, size4]
+ * - stream: 1=stdout, 2=stderr
+ * - size: big-endian uint32 payload size
+ */
+function parseDockerLogs(buffer: Buffer): LogEntry[] {
+  const entries: LogEntry[] = [];
+  let offset = 0;
+
+  while (offset < buffer.length) {
+    // Need at least 8 bytes for header
+    if (offset + 8 > buffer.length) break;
+
+    // Read header
+    const streamType = buffer[offset];
+    const payloadSize = buffer.readUInt32BE(offset + 4);
+    offset += 8;
+
+    // Read payload
+    if (offset + payloadSize > buffer.length) break;
+    const payload = buffer.subarray(offset, offset + payloadSize).toString('utf-8').trim();
+    offset += payloadSize;
+
+    if (!payload) continue;
+
+    // Parse timestamp and message (format: "2024-01-01T12:00:00.000000000Z message")
+    const timestampMatch = payload.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s*(.*)/s);
+    if (timestampMatch) {
+      entries.push({
+        timestamp: timestampMatch[1],
+        message: timestampMatch[2],
+        stream: streamType === 2 ? 'stderr' : 'stdout'
+      });
+    } else {
+      // No timestamp, just use the payload as message
+      entries.push({
+        timestamp: new Date().toISOString(),
+        message: payload,
+        stream: streamType === 2 ? 'stderr' : 'stdout'
+      });
+    }
+  }
+
+  return entries;
+}
+
+/**
+ * Get container logs as structured entries
  */
 export async function getContainerLogs(
   name: string,
   options: { tail?: number; since?: number } = {}
-): Promise<string> {
+): Promise<LogEntry[]> {
   const container = await getContainerByName(name);
   if (!container) {
     throw new Error(`Container not found: ${name}`);
@@ -242,8 +298,8 @@ export async function getContainerLogs(
     timestamps: true
   });
 
-  // Docker logs come as Buffer, need to strip header bytes
-  return logs.toString('utf-8');
+  // logs is a Buffer with multiplexed stream data
+  return parseDockerLogs(logs as Buffer);
 }
 
 export { docker };

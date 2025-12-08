@@ -225,8 +225,9 @@ async function main() {
   if (selectedTypes.includes("unit")) {
     commands.push({
       name: "Unit Tests",
-      command: "npm run test:unit",
-      args: [],
+      // Call vitest directly to avoid recursion (test:unit -> test:master -> test:unit)
+      command: "npx vitest run",
+      args: ["--dir", "tests/unit"],
       type: "unit",
       parallel: true,
     });

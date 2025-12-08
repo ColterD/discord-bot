@@ -3,6 +3,7 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     restart: unless-stopped
+    profiles: ["", "dev", "prod", "minimal"]
     ports:
       - "11434:11434"
     volumes:
@@ -30,11 +31,15 @@ services:
       - OLLAMA_MAX_LOADED_MODELS=1 # Only one model at a time
       - OLLAMA_FLASH_ATTENTION=1 # More efficient VRAM usage
       - OLLAMA_NUM_PARALLEL=2 # Limit concurrent requests
+      # KV Cache Quantization - helps when model fully fits in VRAM
+      # May be slower with partial GPU offload, but beneficial when ComfyUI is unloaded
+      - OLLAMA_KV_CACHE_TYPE=q8_0
 
   chromadb:
     image: chromadb/chroma:latest
     container_name: chromadb
     restart: unless-stopped
+    profiles: ["", "dev", "prod"]
     ports:
       - "8000:8000"
     volumes:
@@ -57,11 +62,12 @@ services:
     image: valkey/valkey:8-alpine
     container_name: valkey
     restart: unless-stopped
+    profiles: ["", "dev", "prod", "minimal"]
     ports:
       - "6379:6379"
     volumes:
       - valkey-data:/data
-    command: valkey-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: valkey-server --appendonly yes --maxmemory 512mb --maxmemory-policy noeviction
     networks:
       - bot-network
     healthcheck:
@@ -75,6 +81,7 @@ services:
     image: zhangp365/comfyui:latest
     container_name: comfyui
     restart: unless-stopped
+    profiles: ["image-gen"] # Only starts when explicitly enabled with --profile image-gen
     ports:
       - "8188:8188"
     volumes:
@@ -88,7 +95,14 @@ services:
               count: 1
               capabilities: [gpu]
     environment:
-      - CLI_ARGS=--listen 0.0.0.0 --port 8188
+      # ComfyUI CLI arguments for optimal performance:
+      # --fast: Enable torch.compile for 10-30% faster generation after warmup
+      # --fp8_e4m3fn-text-enc: Quantize text encoder to FP8 (saves ~4GB VRAM)
+      # --lowvram: Offload models to CPU when not generating (better for LLM coexistence)
+      # --cuda-malloc: Better CUDA memory allocation
+      - CLI_ARGS=--listen 0.0.0.0 --port 8188 --fast --fp8_e4m3fn-text-enc --lowvram --cuda-malloc
+      # PyTorch CUDA memory optimization - reduces fragmentation when switching between LLM and image gen
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,garbage_collection_threshold:0.8
     networks:
       - bot-network
     healthcheck:
@@ -106,6 +120,7 @@ services:
     image: searxng/searxng:latest
     container_name: searxng
     restart: unless-stopped
+    profiles: ["", "dev", "prod"]
     ports:
       - "8080:8080"
     volumes:
@@ -134,6 +149,7 @@ services:
       dockerfile: Dockerfile
     container_name: discord-bot
     restart: unless-stopped
+    profiles: ["", "prod"]
     depends_on:
       ollama:
         condition: service_healthy
@@ -141,8 +157,9 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
-      comfyui:
-        condition: service_healthy
+      # ComfyUI is optional - only required when using --profile image-gen
+      # comfyui:
+      #   condition: service_healthy
       searxng:
         condition: service_healthy
     env_file:
@@ -160,9 +177,16 @@ services:
       - COMFYUI_URL=http://comfyui:8188
       - SEARXNG_URL=http://searxng:8080
       - MEMORY_ENABLED=false
-    # Limited filesystem access - only logs directory
+    # Filesystem access - logs directory + Docker socket for container health management
     volumes:
       - ./logs:/app/logs:rw
+      # Docker socket for health monitor to restart containers via Docker API
+      # Read-only is not supported for container restart; using :rw but with minimal privileges
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    # Add to root group (0) for Docker socket access (socket is root:root on Docker Desktop)
+    # This is the minimal privilege needed for container restart via Docker API
+    group_add:
+      - "0"
     # Security: Read-only root filesystem with specific writable paths
     read_only: true
     tmpfs:
@@ -191,6 +215,67 @@ services:
     # Network isolation - only needs outbound internet access
     networks:
       - bot-network
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: dashboard
+    restart: unless-stopped
+    profiles: ["", "dev", "prod"]
+    depends_on:
+      discord-bot:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HOST=0.0.0.0
+      # Docker socket for container management
+      - DOCKER_SOCKET=/var/run/docker.sock
+    volumes:
+      # Docker socket for container monitoring and management
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # Add to root group (0) for Docker socket access
+    group_add:
+      - "0"
+    # Security: Drop all capabilities
+    cap_drop:
+      - ALL
+    # Security: No new privileges
+    security_opt:
+      - no-new-privileges:true
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    networks:
+      - bot-network
+    # Healthcheck uses node since distroless doesn't have shell tools
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/nodejs/bin/node",
+          "-e",
+          "require('http').get('http://localhost:3000', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 networks:
   bot-network:

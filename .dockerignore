@@ -109,3 +109,12 @@ docker-compose*.yml
 .gitleaks.toml
 .pre-commit-config.yaml
 SECURITY.md
+
+# -----------------------------------------------------------------------------
+# Local Development Only
+# -----------------------------------------------------------------------------
+dashboard/
+scripts/bot-control.ps1
+scripts/*.bat
+ROADMAP.md
+docs/z-image-pe.py

@@ -17,6 +17,26 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("MCP");
 
 /**
+ * Sanitize error objects to prevent sensitive data exposure in logs
+ * Removes potential bearer tokens, auth headers, and config objects
+ */
+function sanitizeError(error: unknown): Error | string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  // Create a clean error with just the message and stack
+  const sanitized = new Error(error.message);
+  sanitized.name = error.name;
+  if (error.stack) {
+    sanitized.stack = error.stack;
+  }
+
+  // Don't copy over any additional properties that might contain secrets
+  return sanitized;
+}
+
+/**
  * Race a promise against a timeout with proper cleanup
  * Unlike raw Promise.race, this clears the timeout to prevent memory leaks
  */
@@ -141,7 +161,7 @@ export class McpClientManager {
           log.error(
             `Failed to connect to MCP server ${serverName}: ` +
               (error instanceof Error ? error.message : String(error)),
-            error
+            sanitizeError(error)
           );
         }
       }
@@ -159,7 +179,7 @@ export class McpClientManager {
       log.error(
         "Failed to initialize MCP client manager: " +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
     }
   }
@@ -539,7 +559,7 @@ export class McpClientManager {
       log.error(
         `Failed to call tool ${toolName}: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
       throw error;
     }
@@ -562,7 +582,7 @@ export class McpClientManager {
       log.error(
         `Failed to call Docker Gateway tool ${toolName}: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
 
       // Attempt reconnection if auto-reconnect is enabled
@@ -654,7 +674,7 @@ export class McpClientManager {
         log.error(
           `Error disconnecting from ${serverName}: ` +
             (error instanceof Error ? error.message : String(error)),
-          error
+          sanitizeError(error)
         );
       }
     }
@@ -670,7 +690,7 @@ export class McpClientManager {
         log.error(
           `Error disconnecting from Docker MCP Gateway: ` +
             (error instanceof Error ? error.message : String(error)),
-          error
+          sanitizeError(error)
         );
       }
     }
@@ -736,7 +756,7 @@ export class McpClientManager {
       log.error(
         `Failed to refresh Docker MCP Gateway tools: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
       throw error;
     }

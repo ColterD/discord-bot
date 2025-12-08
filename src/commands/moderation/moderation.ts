@@ -8,6 +8,9 @@ import {
 import { Discord, Guard, Slash, SlashOption } from "discordx";
 import config from "../../config.js";
 import { PermissionGuard } from "../../guards/permission.guard.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("Moderation");
 
 @Discord()
 export class ModerationCommands {
@@ -75,7 +78,8 @@ export class ModerationCommands {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
-    } catch {
+    } catch (error) {
+      log.error(`Failed to kick ${target.user.tag}:`, error as Error);
       await interaction.reply({
         content: "Failed to kick the member.",
         ephemeral: true,
@@ -159,7 +163,8 @@ export class ModerationCommands {
         .setTimestamp();
 
       await interaction.reply({ embeds: [embed] });
-    } catch {
+    } catch (error) {
+      log.error(`Failed to ban ${target.user.tag}:`, error as Error);
       await interaction.reply({
         content: "Failed to ban the member.",
         ephemeral: true,
@@ -200,7 +205,8 @@ export class ModerationCommands {
         content: `🧹 Deleted ${deleted.size} message(s).`,
         ephemeral: true,
       });
-    } catch {
+    } catch (error) {
+      log.error(`Failed to bulk delete ${amount} messages:`, error as Error);
       await interaction.reply({
         content: "Failed to delete messages. Messages older than 14 days cannot be bulk deleted.",
         ephemeral: true,

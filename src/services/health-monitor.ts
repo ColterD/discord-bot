@@ -58,11 +58,12 @@ class DockerClient {
             : undefined,
         },
         (res) => {
-          let body = "";
+          const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => {
-            body += chunk.toString();
+            chunks.push(chunk);
           });
           res.on("end", () => {
+            const body = Buffer.concat(chunks).toString();
             resolve({ statusCode: res.statusCode ?? 500, body });
           });
         }

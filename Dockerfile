@@ -1,6 +1,6 @@
 # Build stage
 # Pin to specific SHA for supply chain security
-FROM node:24-slim@sha256:0afb7822fac7bf9d7c1bf3b6e6c496dee6b2b64d8dfa365501a3c68e8eba94b2 AS builder
+FROM node:25-slim@sha256:9d346b36433145de8bde85fb11f37820ae7b3fcf0b0771d0fbcfa01c79607909 AS builder
 
 WORKDIR /app
 

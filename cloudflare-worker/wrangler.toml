@@ -1,0 +1,17 @@
+# Cloudflare Worker configuration
+# Proxies AI requests through the edge for lower latency
+#
+# Deploy with: npx wrangler deploy
+# Dev with: npx wrangler dev
+
+name = "discord-bot-ai-proxy"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+# Bind Workers AI
+[ai]
+binding = "AI"
+
+# Environment variables (set via wrangler secret)
+# Run: npx wrangler secret put API_SECRET
+# This secret authenticates requests from your bot

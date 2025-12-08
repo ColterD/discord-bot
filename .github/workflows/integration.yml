@@ -61,9 +61,6 @@ jobs:
           echo "All services ready!"
 
       - name: Run integration tests
-        # Some tests require real credentials (webhooks, Discord API) which aren't
-        # available in public CI. The workflow reports results but doesn't block PRs.
-        continue-on-error: true
         run: npm run test:integration
         env:
           # Test environment configuration

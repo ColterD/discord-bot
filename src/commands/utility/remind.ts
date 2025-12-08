@@ -58,7 +58,7 @@ export class RemindCommand {
 
       log.info(`Reminder set for user ${interaction.user.id} at ${parsedDate.toISOString()}`);
     } catch (error) {
-      log.error("Error setting reminder", error instanceof Error ? error : undefined);
+      log.error("Error setting reminder:", error as Error);
       await interaction.editReply(
         "An error occurred while setting your reminder. Please try again later."
       );

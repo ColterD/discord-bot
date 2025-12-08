@@ -20,6 +20,12 @@ const log = createLogger("ToolPermissions");
 const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/i;
 
 /**
+ * Empty reason for hidden tools - indicates tool doesn't "exist" for this user
+ * Using a constant makes the security intent explicit
+ */
+const HIDDEN_TOOL_REASON = "";
+
+/**
  * Validate that a tool name is safe
  */
 function isValidToolName(toolName: string): boolean {
@@ -119,7 +125,7 @@ export function checkToolAccess(userId: string, toolName: string): ToolAccessRes
     // CRITICAL: Non-owners don't see owner-only tools at all
     return {
       allowed: false,
-      reason: "", // Empty reason - tool doesn't "exist" for this user
+      reason: HIDDEN_TOOL_REASON,
       visible: false,
     };
   }

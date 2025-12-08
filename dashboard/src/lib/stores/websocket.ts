@@ -10,9 +10,19 @@ import type {
   ContainerInfo,
   DashboardStats,
   GpuStatus,
-  MemoryInfo, 
+  MemoryInfo,
   WebSocketMessage
 } from '$lib/types';
+
+/**
+ * Sanitize user-provided values for safe logging
+ * Prevents log injection by removing newlines and control characters
+ */
+function sanitizeForLog(value: unknown): string {
+  const str = String(value);
+  // Replace newlines, carriage returns, and control characters
+  return str.replace(/[\r\n\x00-\x1F\x7F]/g, '');
+}
 
 /** WebSocket connection state */
 export type ConnectionState = 'connecting' | 'connected' | 'disconnected' | 'error';
@@ -135,7 +145,8 @@ function handleMessage(event: MessageEvent): void {
         if (fingerprint !== prevContainerState) {
           if (prevContainerState !== null) {
             // Don't log on first load, only on actual changes
-            console.log('[WS] Containers changed:', containers.map(c => `${c.name}:${c.state}`).join(', '));
+            const summary = containers.map(c => `${sanitizeForLog(c.name)}:${sanitizeForLog(c.state)}`).join(', ');
+            console.log('[WS] Containers changed:', summary);
           }
           setPrevState('containers', fingerprint);
         }
@@ -177,7 +188,7 @@ function handleMessage(event: MessageEvent): void {
       }
 
       default:
-        console.log('[WS Client] Unknown message type:', message.type);
+        console.log('[WS Client] Unknown message type:', sanitizeForLog(message.type));
     }
   } catch (error) {
     console.error('[WS Client] Failed to parse message:', error);

@@ -181,7 +181,8 @@ class ChromaMemoryClient {
     distance: number | null | undefined = 0
   ): MemorySearchResult {
     const distanceValue = distance ?? 0;
-    const relevanceScore = 1 - distanceValue / 2;
+    // Clamp to prevent negative scores when distance > 2
+    const relevanceScore = Math.max(0, 1 - distanceValue / 2);
     const now = Date.now();
 
     return {

@@ -347,13 +347,51 @@ export class GraphMemoryManager {
   }
 
   /**
-   * Update an entity
+   * Update an entity by deleting and re-adding with merged content
+   * ChromaDB doesn't support direct updates
    */
-  private async updateEntity(id: string, _updates: Partial<Entity>): Promise<string> {
-    // For now, just return the existing ID
-    // Full update implementation would delete and re-add with merged content
-    log.debug(`Entity update requested for ${id}`);
-    return id;
+  private async updateEntity(id: string, updates: Partial<Entity>): Promise<string> {
+    const chroma = getChromaClient();
+
+    try {
+      // Get existing entity
+      const existing = await chroma.getMemoryById(id);
+      if (!existing) {
+        log.warn(`Entity ${id} not found for update`);
+        return id;
+      }
+
+      // Parse existing content to extract entity data
+      const lines = existing.content.split("\n");
+      const nameMatch = /ENTITY:\s*(.+)/.exec(lines[0] ?? "");
+      const typeMatch = /Type:\s*(.+)/.exec(lines[1] ?? "");
+      const descMatch = /Description:\s*(.+)/.exec(lines[2] ?? "");
+
+      const entityName = nameMatch?.[1]?.trim() ?? "Unknown";
+      const entityType = (typeMatch?.[1]?.trim() ?? "concept") as EntityType;
+      const entityDesc = updates.description ?? descMatch?.[1]?.trim();
+
+      // Delete old entity
+      await chroma.deleteMemory(id);
+
+      // Create updated entity
+      const updatedEntity: ExtractedEntity = {
+        name: entityName,
+        type: entityType,
+      };
+      // Only add description if present
+      if (entityDesc) {
+        updatedEntity.description = entityDesc;
+      }
+
+      // Re-add with updated content
+      const newId = await this.addEntity(existing.metadata.userId, updatedEntity);
+      log.debug(`Entity updated: ${id} -> ${newId}`);
+      return newId;
+    } catch (error) {
+      log.error(`Failed to update entity ${id}: ${error}`);
+      return id;
+    }
   }
 
   /**

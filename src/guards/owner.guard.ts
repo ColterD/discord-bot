@@ -29,6 +29,13 @@ interface PermissionConfig {
 
 // Load configuration from centralized config
 function loadPermissionConfig(): PermissionConfig {
+  // Critical validation: Bot must have at least one owner configured
+  if (!config.security.ownerIds || config.security.ownerIds.length === 0) {
+    throw new Error(
+      "CRITICAL: No owner IDs configured. Set OWNER_IDS environment variable with at least one Discord user ID."
+    );
+  }
+
   return {
     ownerIds: new Set(config.security.ownerIds),
     adminIds: new Set(config.security.adminIds),

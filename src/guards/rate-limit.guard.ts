@@ -11,6 +11,7 @@ import type { GuardFunction, SimpleCommandMessage } from "discordx";
 
 interface RateLimitEntry {
   timestamps: number[];
+  windowMs: number; // Store the window to use for cleanup
 }
 
 // Store rate limit data per user
@@ -45,10 +46,12 @@ export function RateLimitGuard(
     }
 
     const now = Date.now();
-    const userLimit = rateLimits.get(userId) ?? { timestamps: [] };
+    const userLimit = rateLimits.get(userId) ?? { timestamps: [], windowMs };
 
-    // Filter out old timestamps
-    userLimit.timestamps = userLimit.timestamps.filter((timestamp) => now - timestamp < windowMs);
+    // Filter out old timestamps using the stored window
+    const activeWindowMs = userLimit.windowMs ?? windowMs;
+    userLimit.timestamps = userLimit.timestamps.filter((timestamp) => now - timestamp < activeWindowMs);
+    userLimit.windowMs = windowMs; // Update to current window in case it changed
 
     if (userLimit.timestamps.length >= maxRequests) {
       const oldestTimestamp = userLimit.timestamps[0];
@@ -79,9 +82,10 @@ let cleanupInterval: NodeJS.Timeout | null = null;
 
 cleanupInterval = setInterval(() => {
   const now = Date.now();
-  const windowMs = 60000; // Default window
 
   rateLimits.forEach((entry, userId) => {
+    // Use stored windowMs for each entry (defaults to 60s if not set)
+    const windowMs = entry.windowMs ?? 60000;
     entry.timestamps = entry.timestamps.filter((timestamp) => now - timestamp < windowMs);
     if (entry.timestamps.length === 0) {
       rateLimits.delete(userId);

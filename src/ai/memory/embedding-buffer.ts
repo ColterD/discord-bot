@@ -227,10 +227,15 @@ export class EmbeddingBuffer {
 
       logger.info(`Flushing embedding buffer: ${entries.length} entries`);
 
-      // Move to processing
-      for (const entry of entries) {
-        await this.client?.hset(this.processingKey, entry.id, JSON.stringify(entry));
-        await this.client?.hdel(this.bufferKey, entry.id);
+      // Move to processing atomically using Redis transaction
+      // This prevents race conditions where entries could be lost between hset and hdel
+      if (this.client) {
+        const pipeline = this.client.pipeline();
+        for (const entry of entries) {
+          pipeline.hset(this.processingKey, entry.id, JSON.stringify(entry));
+          pipeline.hdel(this.bufferKey, entry.id);
+        }
+        await pipeline.exec();
       }
 
       // Generate embeddings

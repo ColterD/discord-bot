@@ -127,8 +127,8 @@ export class MemoryManager {
       return;
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format (Discord snowflake: 17-19 digits, or special BOT_USER_ID)
+    if (userId !== BOT_USER_ID && !/^\d{17,19}$/.test(userId)) {
       log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
       return;
     }
@@ -243,8 +243,8 @@ export class MemoryManager {
       return false;
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format (Discord snowflake: 17-19 digits, or special BOT_USER_ID)
+    if (userId !== BOT_USER_ID && !/^\d{17,19}$/.test(userId)) {
       log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
       return false;
     }
@@ -290,8 +290,8 @@ export class MemoryManager {
       return [];
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format (Discord snowflake: 17-19 digits, or special BOT_USER_ID)
+    if (userId !== BOT_USER_ID && !/^\d{17,19}$/.test(userId)) {
       log.warn(`Invalid userId format: ${userId} - returning empty results`);
       return [];
     }

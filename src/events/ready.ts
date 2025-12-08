@@ -5,6 +5,9 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Events");
 
+// Flag to prevent duplicate REST listener registration on reconnect
+let restListenersAttached = false;
+
 /**
  * Discord events handler class
  */
@@ -20,17 +23,21 @@ export class ReadyEvent {
     log.info("Application commands initialized");
 
     // Set up REST API event handlers for rate limit monitoring
-    (client as Client).rest.on("rateLimited", (info) => {
-      log.warn(
-        `REST API rate limited: ${info.method} ${info.route} - Retry after ${info.timeToReset}ms (Global: ${info.global})`
-      );
-    });
-    (client as Client).rest.on("invalidRequestWarning", (data) => {
-      log.warn(
-        `Invalid request warning: ${data.count} invalid requests, ${data.remainingTime}ms until reset`
-      );
-    });
-    log.debug("REST event handlers initialized");
+    // Guard against duplicate listener registration on reconnect
+    if (!restListenersAttached) {
+      (client as Client).rest.on("rateLimited", (info) => {
+        log.warn(
+          `REST API rate limited: ${info.method} ${info.route} - Retry after ${info.timeToReset}ms (Global: ${info.global})`
+        );
+      });
+      (client as Client).rest.on("invalidRequestWarning", (data) => {
+        log.warn(
+          `Invalid request warning: ${data.count} invalid requests, ${data.remainingTime}ms until reset`
+        );
+      });
+      restListenersAttached = true;
+      log.debug("REST event handlers initialized");
+    }
   }
 
   @On({ event: Events.GuildCreate })

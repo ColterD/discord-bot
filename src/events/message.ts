@@ -177,7 +177,9 @@ function startContinuousTyping(channel: TypingChannel): () => void {
   // Send initial typing
   channel.sendTyping().catch((err) => {
     errorCount++;
-    log.debug(`Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`);
+    log.debug(
+      `Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`
+    );
   });
 
   // Keep refreshing typing indicator every 8 seconds
@@ -185,7 +187,9 @@ function startContinuousTyping(channel: TypingChannel): () => void {
     if (!stopped && errorCount < MAX_TYPING_ERRORS) {
       channel.sendTyping().catch((err) => {
         errorCount++;
-        log.debug(`Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`);
+        log.debug(
+          `Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`
+        );
         if (errorCount >= MAX_TYPING_ERRORS) {
           log.debug("Stopping typing indicator retries after too many errors");
           clearInterval(interval);

@@ -50,7 +50,9 @@ export function RateLimitGuard(
 
     // Filter out old timestamps using the stored window
     const activeWindowMs = userLimit.windowMs ?? windowMs;
-    userLimit.timestamps = userLimit.timestamps.filter((timestamp) => now - timestamp < activeWindowMs);
+    userLimit.timestamps = userLimit.timestamps.filter(
+      (timestamp) => now - timestamp < activeWindowMs
+    );
     userLimit.windowMs = windowMs; // Update to current window in case it changed
 
     if (userLimit.timestamps.length >= maxRequests) {

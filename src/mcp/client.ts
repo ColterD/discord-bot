@@ -20,7 +20,11 @@ const log = createLogger("MCP");
  * Race a promise against a timeout with proper cleanup
  * Unlike raw Promise.race, this clears the timeout to prevent memory leaks
  */
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMessage: string): Promise<T> {
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string
+): Promise<T> {
   let timeoutId: NodeJS.Timeout | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {

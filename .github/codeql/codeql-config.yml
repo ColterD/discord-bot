@@ -1,0 +1,8 @@
+name: "CodeQL Config"
+
+# Exclude paths from analysis
+paths-ignore:
+  # Manual test scripts - intentionally access local services
+  - tests/manual/**
+  # Test output files
+  - tests/output_*

@@ -8,8 +8,8 @@ on:
     - cron: "0 0 * * 0" # Weekly on Sunday
   workflow_dispatch:
 
-permissions:
-  contents: write
+# Restrict default permissions - jobs declare what they need
+permissions: {}
 
 jobs:
   # Delete merged PR branches automatically
@@ -17,6 +17,8 @@ jobs:
     name: Delete Merged Branch
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true
+    permissions:
+      contents: write
 
     steps:
       - name: Delete branch
@@ -60,6 +62,8 @@ jobs:
     name: Cleanup Stale Branches
     runs-on: ubuntu-latest
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository

@@ -1,7 +1,7 @@
 import {
-  type ButtonInteraction,
   ActionRowBuilder,
   ButtonBuilder,
+  type ButtonInteraction,
   ButtonStyle,
   EmbedBuilder,
 } from "discord.js";

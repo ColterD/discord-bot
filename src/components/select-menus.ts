@@ -1,8 +1,8 @@
 import {
-  type StringSelectMenuInteraction,
   ActionRowBuilder,
-  StringSelectMenuBuilder,
   EmbedBuilder,
+  StringSelectMenuBuilder,
+  type StringSelectMenuInteraction,
 } from "discord.js";
 import { Discord, SelectMenuComponent } from "discordx";
 import config from "../config.js";

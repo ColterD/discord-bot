@@ -1,10 +1,10 @@
 import {
+  EmbedBuilder,
+  LabelBuilder,
+  ModalBuilder,
   type ModalSubmitInteraction,
   TextInputBuilder,
   TextInputStyle,
-  ModalBuilder,
-  EmbedBuilder,
-  LabelBuilder,
 } from "discord.js";
 import { Discord, ModalComponent } from "discordx";
 import { AIService } from "../ai/service.js";
@@ -54,7 +54,7 @@ export class ModalComponents {
 
       const embed = new EmbedBuilder()
         .setTitle("🤖 AI Response")
-        .setDescription(response.length > 4000 ? response.substring(0, 4000) + "..." : response)
+        .setDescription(response.length > 4000 ? `${response.substring(0, 4000)}...` : response)
         .setColor(config.colors.primary)
         .setFooter({ text: `Model: ${this.aiService.getModel()}` })
         .setTimestamp();

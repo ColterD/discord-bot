@@ -6,6 +6,9 @@
 
 import "dotenv/config";
 
+// Re-export Docker health utilities
+export * from "./docker-health.js";
+
 // ============ Security Constants ============
 
 /** Discord webhook URL regex pattern - validates the expected format */
@@ -39,6 +42,17 @@ export interface DiscordMessage {
     url: string;
     content_type?: string;
   }[];
+  /** Message this is a reply to (if any) */
+  referenced_message?: {
+    id: string;
+    content?: string;
+  } | null;
+  /** Message reference data (alternative to referenced_message) */
+  message_reference?: {
+    message_id?: string;
+    channel_id?: string;
+    guild_id?: string;
+  };
 }
 
 export interface TestEnv {
@@ -242,6 +256,7 @@ export async function fetchChannelMessages(
 
 /**
  * Check if a message is a valid bot response (not a status/generating message)
+ * Prioritizes messages that are direct replies to the triggering message
  */
 export function isValidBotResponse(
   msg: DiscordMessage,
@@ -261,7 +276,25 @@ export function isValidBotResponse(
 }
 
 /**
+ * Check if a message is a direct reply to a specific message
+ */
+export function isDirectReplyTo(msg: DiscordMessage, targetMsgId: string): boolean {
+  // Check referenced_message (populated when fetching with message content)
+  if (msg.referenced_message?.id === targetMsgId) {
+    return true;
+  }
+
+  // Check message_reference (always populated for replies)
+  if (msg.message_reference?.message_id === targetMsgId) {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Wait for a bot response after sending a message
+ * Prioritizes direct replies (message.reply()) over generic bot messages
  */
 export async function waitForBotResponse(
   env: TestEnv,
@@ -274,20 +307,33 @@ export async function waitForBotResponse(
   while (Date.now() - startTime < maxWaitMs) {
     const messages = await fetchChannelMessages(env.channelId, env.botToken, afterMsgId);
 
-    const botResponse = messages.find((msg) =>
+    // Filter to valid bot responses
+    const validResponses = messages.filter((msg) =>
       isValidBotResponse(msg, afterMsgId, env.botClientId)
     );
 
-    if (botResponse) {
-      return botResponse;
+    // Priority 1: Find a direct reply to our message
+    const directReply = validResponses.find((msg) => isDirectReplyTo(msg, afterMsgId));
+    if (directReply) {
+      return directReply;
+    }
+
+    // Priority 2: If no direct reply yet, wait for one
+    // Only accept non-reply responses after waiting a bit (to allow for reply to arrive)
+    const elapsed = Date.now() - startTime;
+    if (validResponses.length > 0 && elapsed > 10000) {
+      // After 10 seconds, accept any valid response as fallback
+      // Sort by timestamp (earliest first) to get the first response
+      validResponses.sort((a, b) => (BigInt(a.id) < BigInt(b.id) ? -1 : 1));
+      return validResponses[0] ?? null;
     }
 
     await sleep(pollIntervalMs);
 
     // Periodic status update
-    const elapsed = Math.round((Date.now() - startTime) / 1000);
-    if (elapsed % 15 === 0 && elapsed > 0) {
-      console.log(`  Still waiting for bot response... (${elapsed}s elapsed)`);
+    const elapsedSec = Math.round(elapsed / 1000);
+    if (elapsedSec % 15 === 0 && elapsedSec > 0) {
+      console.log(`  Still waiting for bot response... (${elapsedSec}s elapsed)`);
     }
   }
 
@@ -308,7 +354,7 @@ export function sleep(ms: number): Promise<void> {
  */
 export function truncate(str: string, maxLength = 200): string {
   if (str.length <= maxLength) return str;
-  return str.substring(0, maxLength) + "...";
+  return `${str.substring(0, maxLength)}...`;
 }
 
 /**

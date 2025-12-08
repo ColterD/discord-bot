@@ -48,34 +48,45 @@ const PROTECTED_NAMES = [
 ];
 
 /**
+ * Initialize the distance matrix for Levenshtein calculation
+ */
+function initializeMatrix(m: number, n: number): number[][] {
+  const dp: number[][] = Array.from({ length: m + 1 }, (_, i) =>
+    Array.from({ length: n + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0))
+  );
+  return dp;
+}
+
+/**
+ * Get value from matrix safely with default fallback
+ */
+function getMatrixValue(dp: number[][], row: number, col: number): number {
+  return dp[row]?.[col] ?? 0;
+}
+
+/**
  * Calculate Levenshtein distance between two strings
  */
 function levenshteinDistance(str1: string, str2: string): number {
   const m = str1.length;
   const n = str2.length;
+  const dp = initializeMatrix(m, n);
 
-  // Create distance matrix
-  const dp: number[][] = new Array(m + 1)
-    .fill(null)
-    .map(() => new Array(n + 1).fill(0) as number[]);
-
-  // Initialize first row and column
-  for (let i = 0; i <= m; i++) dp[i]![0] = i;
-  for (let j = 0; j <= n; j++) dp[0]![j] = j;
-
-  // Fill in the rest of the matrix
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
-      dp[i]![j] = Math.min(
-        dp[i - 1]![j]! + 1, // Deletion
-        dp[i]![j - 1]! + 1, // Insertion
-        dp[i - 1]![j - 1]! + cost // Substitution
-      );
+      const deletion = getMatrixValue(dp, i - 1, j) + 1;
+      const insertion = getMatrixValue(dp, i, j - 1) + 1;
+      const substitution = getMatrixValue(dp, i - 1, j - 1) + cost;
+
+      const row = dp[i];
+      if (row) {
+        row[j] = Math.min(deletion, insertion, substitution);
+      }
     }
   }
 
-  return dp[m]![n]!;
+  return getMatrixValue(dp, m, n);
 }
 
 /**

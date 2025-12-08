@@ -40,9 +40,10 @@ async function runTests(): Promise<void> {
   console.log(`\n📊 Results: ${passed} passed, ${failed} failed\n`);
 
   if (failed > 0) {
-    process.exit(1);
+    setTimeout(() => process.exit(1), 100);
+    return;
   }
-  process.exit(0);
+  setTimeout(() => process.exit(0), 100);
 }
 
 // ============ VRAM Byte Conversion Tests ============
@@ -89,23 +90,25 @@ test("ImageService: VRAM thresholds are correctly defined", () => {
 
 // ============ VRAM Delta Edge Case Tests ============
 
+/**
+ * Simulate the VRAM calculation logic from attemptModelUnload
+ */
+function simulateVRAMCheck(
+  beforeUsed: number,
+  afterUsed: number
+): {
+  rawDelta: number;
+  freedBytes: number;
+  increased: boolean;
+} {
+  const rawDelta = beforeUsed - afterUsed;
+  const increased = rawDelta < 0;
+  const freedBytes = Math.max(0, rawDelta);
+
+  return { rawDelta, freedBytes, increased };
+}
+
 test("ImageService: VRAM increase detection works correctly", () => {
-  // Simulate the VRAM calculation logic from attemptModelUnload
-  function simulateVRAMCheck(
-    beforeUsed: number,
-    afterUsed: number
-  ): {
-    rawDelta: number;
-    freedBytes: number;
-    increased: boolean;
-  } {
-    const rawDelta = beforeUsed - afterUsed;
-    const increased = rawDelta < 0;
-    const freedBytes = Math.max(0, rawDelta);
-
-    return { rawDelta, freedBytes, increased };
-  }
-
   // Test case 1: Normal unload - VRAM decreases
   const normalUnload = simulateVRAMCheck(8000, 1000);
   assert.equal(normalUnload.increased, false, "Normal unload should not show increase");

@@ -1,9 +1,9 @@
-import type { GuardFunction } from "discordx";
 import type {
   CommandInteraction,
   ContextMenuCommandInteraction,
   PermissionResolvable,
 } from "discord.js";
+import type { GuardFunction } from "discordx";
 
 /**
  * Permission Guard

@@ -1,12 +1,12 @@
 import {
   ApplicationCommandOptionType,
+  ChannelType,
   type CommandInteraction,
   EmbedBuilder,
-  ChannelType,
 } from "discord.js";
 import { Discord, Slash, SlashOption } from "discordx";
-import config from "../../config.js";
 import { getConversationService } from "../../ai/conversation.js";
+import config from "../../config.js";
 
 @Discord()
 export class UtilityCommands {

@@ -1,20 +1,20 @@
-import axios from "axios";
 import dns from "node:dns/promises";
 import net from "node:net";
+import axios from "axios";
 import { XMLParser } from "fast-xml-parser";
 import { evaluate } from "mathjs";
-import {
-  type ToolCall,
-  type ToolResult,
-  AGENT_TOOLS,
-  formatToolsForPrompt,
-  parseToolCall,
-  isValidTool,
-} from "./tools.js";
-import { type AIService, getAIService } from "./service.js";
 import { logger } from "../utils/logger.js";
 import { stripHtmlTags } from "../utils/security.js";
 import { getMemoryManager } from "./memory/index.js";
+import { type AIService, getAIService } from "./service.js";
+import {
+  AGENT_TOOLS,
+  formatToolsForPrompt,
+  isValidTool,
+  parseToolCall,
+  type ToolCall,
+  type ToolResult,
+} from "./tools.js";
 
 interface AgentMessage {
   role: "system" | "user" | "assistant" | "tool";
@@ -524,7 +524,12 @@ Do not include raw JSON tool-calls in your final response.`;
         return { success: false, error: validation.error ?? "Invalid URL" };
       }
 
-      const ssrfCheck = await this.checkSSRF(validation.parsedUrl!.hostname);
+      const hostname = validation.parsedUrl?.hostname;
+      if (!hostname) {
+        return { success: false, error: "Could not determine URL hostname" };
+      }
+
+      const ssrfCheck = await this.checkSSRF(hostname);
       if (ssrfCheck.blocked) {
         return { success: false, error: ssrfCheck.error ?? "SSRF blocked" };
       }
@@ -728,6 +733,13 @@ Do not include raw JSON tool-calls in your final response.`;
   }
 
   /**
+   * Helper to extract error message
+   */
+  private getErrorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : "Unknown error";
+  }
+
+  /**
    * Get Wikipedia summary
    */
   private async toolWikipediaSummary(topic: string): Promise<ToolResult> {
@@ -735,10 +747,7 @@ Do not include raw JSON tool-calls in your final response.`;
       const trimmedTopic = topic?.trim() ?? "";
 
       if (!trimmedTopic) {
-        return {
-          success: false,
-          error: "Topic cannot be empty.",
-        };
+        return { success: false, error: "Topic cannot be empty." };
       }
 
       if (trimmedTopic.length > 200) {
@@ -749,11 +758,7 @@ Do not include raw JSON tool-calls in your final response.`;
       }
 
       // Validate topic doesn't contain path traversal attempts
-      if (
-        trimmedTopic.includes("..") ||
-        trimmedTopic.includes("/") ||
-        trimmedTopic.includes("\\")
-      ) {
+      if (/[/\\]|\.\./.test(trimmedTopic)) {
         return {
           success: false,
           error: "Topic contains invalid characters.",
@@ -764,24 +769,16 @@ Do not include raw JSON tool-calls in your final response.`;
         `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(trimmedTopic)}`,
         {
           timeout: TOOL_TIMEOUT,
-          headers: {
-            "User-Agent": "DiscordBot/1.0",
-          },
+          headers: { "User-Agent": "DiscordBot/1.0" },
         }
       );
 
-      interface WikipediaResponse {
+      const data = response.data as {
         type?: string;
         title?: string;
         extract?: string;
-        content_urls?: {
-          desktop?: {
-            page?: string;
-          };
-        };
-      }
-
-      const data = response.data as WikipediaResponse;
+        content_urls?: { desktop?: { page?: string } };
+      };
 
       if (data.type === "disambiguation") {
         return {
@@ -806,14 +803,9 @@ Do not include raw JSON tool-calls in your final response.`;
         };
       }
 
-      logger.error(
-        "Wikipedia lookup failed",
-        error instanceof Error ? error.message : "Unknown error"
-      );
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      };
+      const msg = this.getErrorMessage(error);
+      logger.error("Wikipedia lookup failed", msg);
+      return { success: false, error: msg };
     }
   }
 

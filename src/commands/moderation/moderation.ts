@@ -6,8 +6,8 @@ import {
   PermissionFlagsBits,
 } from "discord.js";
 import { Discord, Guard, Slash, SlashOption } from "discordx";
-import { PermissionGuard } from "../../guards/permission.guard.js";
 import config from "../../config.js";
+import { PermissionGuard } from "../../guards/permission.guard.js";
 
 @Discord()
 export class ModerationCommands {

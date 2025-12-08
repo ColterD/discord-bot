@@ -1,19 +1,19 @@
 import {
   ApplicationCommandOptionType,
+  ApplicationCommandType,
   type Attachment,
   type CommandInteraction,
   EmbedBuilder,
   type MessageContextMenuCommandInteraction,
   type UserContextMenuCommandInteraction,
-  ApplicationCommandType,
 } from "discord.js";
-import { Discord, Slash, SlashOption, SlashChoice, ContextMenu } from "discordx";
-import { getAIService } from "../../ai/service.js";
+import { ContextMenu, Discord, Slash, SlashChoice, SlashOption } from "discordx";
 import { getMemoryManager } from "../../ai/memory/index.js";
-import { getRateLimiter, buildRateLimitFooter } from "../../utils/rate-limiter.js";
-import { validatePrompt, sanitizeInput, securityCheck } from "../../utils/security.js";
-import { createLogger } from "../../utils/logger.js";
+import { getAIService } from "../../ai/service.js";
 import config from "../../config.js";
+import { createLogger } from "../../utils/logger.js";
+import { buildRateLimitFooter, getRateLimiter } from "../../utils/rate-limiter.js";
+import { sanitizeInput, securityCheck, validatePrompt } from "../../utils/security.js";
 
 const log = createLogger("AICommands");
 
@@ -111,6 +111,63 @@ export class AICommands {
     return 0.7;
   }
 
+  /**
+   * Helper: Get context from file attachment
+   */
+  private async getAttachmentContext(file: Attachment | undefined): Promise<string> {
+    if (!file) return "";
+    const fileContext = await this.processFileAttachment(file);
+    if (fileContext.success) {
+      return `\n\n## Attached Document Context:\n${fileContext.text}`;
+    }
+    if (fileContext.error) {
+      log.warn(`File processing failed: ${fileContext.error}`);
+    }
+    return "";
+  }
+
+  /**
+   * Helper: Build response embed
+   */
+  private buildResponseEmbed(
+    response: string,
+    rateLimitResult: { allowed: true; isWarning?: boolean; message?: string | null },
+    mode: string | undefined,
+    file: Attachment | undefined,
+    contextText: string,
+    userId: string,
+    channelId: string,
+    isDM: boolean
+  ): EmbedBuilder {
+    const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);
+
+    const embed = new EmbedBuilder()
+      .setColor(config.colors.primary)
+      .setTitle("🤖 AI Response")
+      .setDescription(response.slice(0, 4000))
+      .setFooter({
+        text: `${rateLimitFooter} | Mode: ${mode ?? "balanced"}`,
+      })
+      .setTimestamp();
+
+    if (rateLimitResult.isWarning && rateLimitResult.message) {
+      embed.addFields({
+        name: "⚠️ Notice",
+        value: rateLimitResult.message,
+      });
+    }
+
+    if (file && contextText) {
+      embed.addFields({
+        name: "📎 Attached Context",
+        value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)`,
+        inline: true,
+      });
+    }
+
+    return embed;
+  }
+
   @Slash({
     name: "ask",
     description: "Ask the AI a question",
@@ -158,8 +215,8 @@ export class AICommands {
 
     // Validate and sanitize prompt
     const promptCheck = await this.validatePromptAndRespond(interaction, question);
-    if (!promptCheck.valid) return;
-    const sanitizedText = promptCheck.sanitizedText!;
+    if (!promptCheck.valid || !promptCheck.sanitizedText) return;
+    const sanitizedText = promptCheck.sanitizedText;
 
     await interaction.deferReply();
 
@@ -177,16 +234,7 @@ export class AICommands {
 ${memoryContext}`;
 
       // Handle file attachment for RAG context
-      let contextText = "";
-      if (file) {
-        const fileContext = await this.processFileAttachment(file);
-        if (fileContext.success) {
-          contextText = `\n\n## Attached Document Context:\n${fileContext.text}`;
-        } else if (fileContext.error) {
-          // Warn but continue
-          log.warn(`File processing failed: ${fileContext.error}`);
-        }
-      }
+      const contextText = await this.getAttachmentContext(file);
 
       // Combine question with file context
       const fullQuestion = contextText
@@ -203,34 +251,16 @@ ${memoryContext}`;
         log.debug(`Failed to add memory: ${err instanceof Error ? err.message : String(err)}`);
       });
 
-      // Build footer with rate limit info
-      const rateLimitFooter = buildRateLimitFooter(userId, channelId, isDM);
-
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.primary)
-        .setTitle("🤖 AI Response")
-        .setDescription(response.slice(0, 4000))
-        .setFooter({
-          text: `${rateLimitFooter} | Mode: ${mode ?? "balanced"}`,
-        })
-        .setTimestamp();
-
-      // Add rate limit warning if applicable
-      if (rateLimitResult.isWarning && rateLimitResult.message) {
-        embed.addFields({
-          name: "⚠️ Notice",
-          value: rateLimitResult.message,
-        });
-      }
-
-      // Note if file was processed
-      if (file && contextText) {
-        embed.addFields({
-          name: "📎 Attached Context",
-          value: `Processed \`${file.name}\` (${(file.size / 1024).toFixed(1)} KB)`,
-          inline: true,
-        });
-      }
+      const embed = this.buildResponseEmbed(
+        response,
+        rateLimitResult,
+        mode,
+        file,
+        contextText,
+        userId,
+        channelId,
+        isDM
+      );
 
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
@@ -389,7 +419,7 @@ ${memoryContext}`;
       const maxChars = 8000;
       const truncatedText =
         security.safeText.length > maxChars
-          ? security.safeText.slice(0, maxChars) + "\n... [Content truncated]"
+          ? `${security.safeText.slice(0, maxChars)}\n... [Content truncated]`
           : security.safeText;
 
       return { success: true, text: truncatedText };

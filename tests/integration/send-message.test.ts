@@ -9,14 +9,14 @@
  */
 
 import {
+  type DiscordMessage,
   getRequiredEnv,
   sendWebhookMessage,
-  waitForBotResponse,
   sleep,
-  truncate,
-  type DiscordMessage,
   type TestEnv,
-} from "./utils/index.js";
+  truncate,
+  waitForBotResponse,
+} from "../utils/index.js";
 
 // ============ Types ============
 
@@ -105,7 +105,7 @@ const conversationTests: TestCase[] = [
     message: "What is 25 * 17 + 42?",
     expectedBehavior: "Bot should calculate correctly (467)",
     validate: withRateLimitCheck((r) => r.includes("467")),
-    delay: 180000,
+    delay: 300000,
   },
 ];
 
@@ -125,6 +125,16 @@ const toolTests: TestCase[] = [
     expectedBehavior: "Bot should use calculation tool for compound interest",
     validate: withRateLimitCheck((r) => /\$?\d+/.test(r)),
     delay: 180000,
+  },
+  {
+    name: "Web Search Tool",
+    message: "Search the web for the latest TypeScript version number",
+    expectedBehavior: "Bot should use web search to find version",
+    validate: withRateLimitCheck(
+      (r) =>
+        r.includes("TypeScript") || r.toLowerCase().includes("typescript") || /\d+\.\d+/.test(r)
+    ),
+    delay: 60000,
   },
 ];
 
@@ -147,6 +157,22 @@ const memoryTests: TestCase[] = [
     expectedBehavior: "Bot should recall TypeScript",
     validate: withRateLimitCheck((r) => r.toLowerCase().includes("typescript")),
     delay: 180000,
+  },
+  {
+    name: "Complex Memory Storage",
+    message: "My name is TestUser and I live in Seattle. Please remember this for later.",
+    expectedBehavior: "Bot should acknowledge storing multiple facts",
+    validate: withRateLimitCheck(
+      (r) => r.toLowerCase().includes("remember") || r.toLowerCase().includes("noted")
+    ),
+    delay: 120000,
+  },
+  {
+    name: "Complex Memory Recall",
+    message: "Where do I live?",
+    expectedBehavior: "Bot should recall location (Seattle)",
+    validate: withRateLimitCheck((r) => r.toLowerCase().includes("seattle")),
+    delay: 120000,
   },
 ];
 
@@ -323,11 +349,11 @@ async function main(): Promise<void> {
   const selectedSuites = args.length > 0 ? args : ["all"];
 
   const suites: { name: string; key: string; tests: TestCase[] }[] = [
-    { name: "Conversation Tests", key: "conversation", tests: conversationTests },
-    { name: "Tool Usage Tests", key: "tools", tests: toolTests },
-    { name: "Memory Tests", key: "memory", tests: memoryTests },
-    { name: "Security Tests", key: "security", tests: securityTests },
-    { name: "Image Generation Tests", key: "image", tests: imageTests },
+    { name: "Conversation E2E Tests", key: "conversation", tests: conversationTests },
+    { name: "Tool Usage E2E Tests", key: "tools", tests: toolTests },
+    { name: "Memory E2E Tests", key: "memory", tests: memoryTests },
+    { name: "Security E2E Tests", key: "security", tests: securityTests },
+    { name: "Image Generation E2E Tests", key: "image", tests: imageTests },
   ];
 
   const allResults: SuiteResults[] = [];
@@ -342,11 +368,15 @@ async function main(): Promise<void> {
   const { failed, noResponse } = printSummary(allResults);
 
   if (failed > 0 || noResponse > 0) {
-    process.exit(1);
+    setTimeout(() => process.exit(1), 100);
+    return;
   }
+
+  // Graceful exit
+  setTimeout(() => process.exit(0), 100);
 }
 
 await main().catch((error) => {
   log("error", `Unhandled error: ${error instanceof Error ? error.message : error}`);
-  process.exit(1);
+  setTimeout(() => process.exit(1), 100);
 });

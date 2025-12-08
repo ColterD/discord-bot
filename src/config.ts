@@ -1,354 +1,306 @@
 /**
  * Bot Configuration
- * Centralized configuration management
+ * Centralized configuration management with Zod validation
  */
 
-/**
- * Validate that a URL is well-formed and uses an allowed protocol.
- * This is used for internal service URLs set via environment variables.
- * These URLs point to trusted internal infrastructure (Docker services)
- * and are set by administrators, not user input.
- *
- * @param url - The URL to validate
- * @param name - The name of the configuration (for error messages)
- * @param allowedProtocols - Allowed protocols (default: http, https)
- * @returns The validated URL string
- * @throws Error if URL is malformed or uses disallowed protocol
- *
- * @security This validates admin-configured internal service URLs, not user input.
- * The URLs point to Docker-internal services (ollama, chromadb, comfyui, etc.)
- * which are explicitly allowed to be internal/private addresses.
- */
-function validateInternalServiceUrl(
-  url: string,
-  name: string,
-  allowedProtocols: string[] = ["http:", "https:", "valkey:", "redis:"]
-): string {
-  try {
-    const parsed = new URL(url);
-    if (!allowedProtocols.includes(parsed.protocol)) {
-      throw new Error(
-        `Invalid ${name}: protocol "${parsed.protocol}" not allowed. ` +
-          `Allowed: ${allowedProtocols.join(", ")}`
-      );
-    }
-    // Return the original URL string (validated)
-    return url;
-  } catch (error) {
-    if (error instanceof TypeError) {
-      throw new Error(`Invalid ${name}: "${url}" is not a valid URL`);
-    }
-    throw error;
-  }
-}
+import "dotenv/config";
+import { z } from "zod";
 
-/**
- * Validate and parse a positive integer from environment variable
- * @throws Error if value is invalid
- */
-function validatePositiveInt(
-  value: string | undefined,
-  defaultValue: string,
-  name: string,
-  min = 1
-): number {
-  const parsed = Number.parseInt(value ?? defaultValue, 10);
-  if (Number.isNaN(parsed) || parsed < min) {
-    throw new Error(`Invalid ${name}: "${value ?? defaultValue}" must be a number >= ${min}`);
-  }
-  return parsed;
-}
+// Helper for comma-separated lists
+const csv = z
+  .string()
+  .default("")
+  .transform((val) => val.split(",").filter(Boolean));
 
-/**
- * Validate and parse a float from environment variable
- * @throws Error if value is invalid
- */
-function validateFloat(
-  value: string | undefined,
-  defaultValue: string,
-  name: string,
-  min?: number,
-  max?: number
-): number {
-  const parsed = Number.parseFloat(value ?? defaultValue);
-  if (Number.isNaN(parsed)) {
-    throw new TypeError(`Invalid ${name}: "${value ?? defaultValue}" must be a number`);
-  }
-  if (min !== undefined && parsed < min) {
-    throw new RangeError(`Invalid ${name}: must be >= ${min}`);
-  }
-  if (max !== undefined && parsed > max) {
-    throw new RangeError(`Invalid ${name}: must be <= ${max}`);
-  }
-  return parsed;
-}
+// Helper for internal service URLs
+const internalServiceUrl = (name: string) =>
+  z
+    .string()
+    .url({ message: `Invalid ${name} URL` })
+    .refine((url) => {
+      try {
+        const parsed = new URL(url);
+        return ["http:", "https:", "valkey:", "redis:"].includes(parsed.protocol);
+      } catch {
+        return false;
+      }
+    }, `Invalid ${name}: protocol must be http, https, valkey, or redis`);
 
-export const config = {
-  // Bot settings
-  bot: {
-    name: process.env.BOT_NAME ?? "Discord Bot",
-    prefix: "!",
-  },
+// Define the environment schema
+export const envSchema = z.object({
+  // Bot Identity
+  BOT_NAME: z.string().default("Discord Bot"),
 
-  // Discord settings
-  discord: {
-    token: process.env.DISCORD_TOKEN ?? "",
-    clientId: process.env.DISCORD_CLIENT_ID ?? "",
-    devGuildId: process.env.DEV_GUILD_ID ?? "",
-  },
+  // Discord Credentials
+  DISCORD_TOKEN: z.string().min(1, "DISCORD_TOKEN is required"),
+  DISCORD_CLIENT_ID: z.string().min(1, "DISCORD_CLIENT_ID is required"),
+  DEV_GUILD_ID: z.string().optional(),
 
-  // Testing configuration
-  testing: {
-    // Master switch for test mode (enables test channels and verbose logging)
-    enabled: process.env.TEST_MODE === "true",
-    // Webhook URL for sending automated test messages
-    webhookUrl: process.env.TEST_WEBHOOK_URL ?? "",
-    // Channels where bot responds to ALL messages (for automated testing)
-    // Set via TEST_CHANNEL_IDS env var (comma-separated) or defaults to empty
-    alwaysRespondChannelIds: (process.env.TEST_CHANNEL_IDS ?? "").split(",").filter(Boolean),
-    // Enable verbose logging for test channels
-    verboseLogging: process.env.TEST_VERBOSE_LOGGING === "true" || process.env.TEST_MODE === "true",
-  },
+  // Testing
+  TEST_MODE: z.enum(["true", "false"]).default("false"),
+  TEST_WEBHOOK_URL: z.string().optional(),
+  TEST_CHANNEL_IDS: csv,
+  TEST_VERBOSE_LOGGING: z.enum(["true", "false"]).default("false"),
 
   // Environment
-  env: {
-    isProduction: process.env.NODE_ENV === "production",
-    isDevelopment: process.env.NODE_ENV === "development",
-  },
+  NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
-  // LLM Configuration (Ollama in Docker container)
-  // SECURITY: Internal Docker service URLs use HTTP as they run on an isolated Docker network.
-  // These are NOT user-facing and are validated at startup via validateInternalServiceUrl().
+  // LLM Configuration
+  OLLAMA_HOST: internalServiceUrl("OLLAMA_HOST").default("http://ollama:11434"),
+  LLM_MODEL: z
+    .string()
+    .default("hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1"),
+  LLM_FALLBACK_MODEL: z.string().default("qwen2.5:7b"),
+  LLM_MAX_TOKENS: z.coerce.number().int().min(1).default(4096),
+  LLM_TEMPERATURE: z.coerce.number().min(0).max(2).default(0.7),
+  LLM_REQUEST_TIMEOUT: z.coerce.number().int().min(1000).default(300000), // 5 mins
+  LLM_KEEP_ALIVE: z.string().default("300"), // String because it can be "-1"
+  LLM_PRELOAD: z.enum(["true", "false"]).default("true"),
+  LLM_SLEEP_AFTER_MS: z.coerce.number().int().min(1000).default(300000),
+  LLM_USE_ORCHESTRATOR: z.enum(["true", "false"]).default("true"),
+
+  // Heretic Specifics
+  LLM_NUM_EXPERTS: z.coerce.number().int().min(1).default(5),
+  LLM_REP_PEN: z.coerce.number().min(1).max(2).default(1.1),
+  LLM_TEMP_CODING: z.coerce.number().min(0).max(2).default(0.6),
+  LLM_TEMP_CREATIVE: z.coerce.number().min(0).max(2).default(1.0),
+  LLM_CONTEXT_LENGTH: z.coerce.number().int().min(1024).default(65536),
+
+  // LLM Performance
+  LLM_NUM_BATCH: z.coerce.number().int().min(1).default(1024),
+  LLM_NUM_THREAD: z.coerce.number().int().min(0).default(0),
+  LLM_FLASH_ATTENTION: z.enum(["true", "false"]).default("true"),
+  LLM_MMAP: z.enum(["true", "false"]).default("true"),
+  LLM_MLOCK: z.enum(["true", "false"]).default("false"),
+
+  // Cloudflare
+  CLOUDFLARE_ACCOUNT_ID: z.string().optional(),
+  CLOUDFLARE_API_TOKEN: z.string().optional(),
+  CLOUDFLARE_ROUTER_MODEL: z.string().default("@cf/ibm-granite/granite-4.0-h-micro"),
+  CLOUDFLARE_EMBEDDING_MODEL: z.string().default("@cf/qwen/qwen3-embedding-0.6b"),
+  CLOUDFLARE_WORKER_URL: z.string().optional(),
+  CLOUDFLARE_WORKER_SECRET: z.string().optional(),
+
+  // Summarization
+  SUMMARIZATION_MODEL: z.string().default("qwen2.5:3b"),
+
+  // Valkey
+  VALKEY_URL: internalServiceUrl("VALKEY_URL").default("valkey://localhost:6379"),
+  VALKEY_CONVERSATION_TTL_MS: z.coerce.number().int().min(60000).default(1800000),
+  VALKEY_KEY_PREFIX: z.string().default("discord-bot:"),
+
+  // ChromaDB
+  CHROMA_URL: internalServiceUrl("CHROMA_URL").default("http://chromadb:8000"),
+  CHROMA_COLLECTION: z.string().default("memories"),
+
+  // Embedding
+  EMBEDDING_MODEL: z.string().default("qwen3-embedding:0.6b"),
+
+  // Memory System
+  MEMORY_ENABLED: z.enum(["true", "false"]).default("true"),
+  MEMORY_SUMMARIZE_AFTER_MESSAGES: z.coerce.number().int().min(1).default(15),
+  MEMORY_SUMMARIZE_AFTER_IDLE_MS: z.coerce.number().int().min(60000).default(1800000),
+  MEMORY_MAX_CONTEXT_TOKENS: z.coerce.number().int().min(1024).default(4096),
+  MEMORY_PROFILE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),
+  MEMORY_EPISODIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
+  MEMORY_TIME_DECAY_PER_DAY: z.coerce.number().min(0.5).max(1).default(0.98),
+  MEMORY_STRENGTH_DECAY_DAYS: z.coerce.number().int().min(1).default(30),
+  MEMORY_CONSOLIDATION_THRESHOLD: z.coerce.number().min(0.5).max(1).default(0.85),
+  MEMORY_MIN_IMPORTANCE: z.coerce.number().min(0).max(1).default(0.3),
+
+  // MCP
+  MCP_CONFIG_PATH: z.string().default("./mcp-servers.json"),
+  MCP_CONNECTION_TIMEOUT_MS: z.coerce.number().int().min(1000).default(30000),
+  MCP_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).default(60000),
+
+  // Docekr MCP Gateway
+  DOCKER_MCP_ENABLED: z.enum(["true", "false"]).default("false"),
+  DOCKER_MCP_TRANSPORT: z.enum(["stdio", "http"]).default("stdio"),
+  DOCKER_MCP_GATEWAY_URL: internalServiceUrl("DOCKER_MCP_GATEWAY_URL").default(
+    "http://host.docker.internal:8811"
+  ),
+  DOCKER_MCP_GATEWAY_ENDPOINT: z.string().default("/mcp"),
+  DOCKER_MCP_BEARER_TOKEN: z.string().optional(),
+  DOCKER_MCP_AUTO_RECONNECT: z.enum(["true", "false"]).default("true"),
+  DOCKER_MCP_MAX_RECONNECT_ATTEMPTS: z.coerce.number().int().min(0).default(5),
+
+  // Security
+  BOT_OWNER_IDS: csv,
+  BOT_ADMIN_IDS: csv,
+  BOT_MODERATOR_IDS: csv,
+  SECURITY_IMPERSONATION_ENABLED: z.enum(["true", "false"]).default("true"),
+  SECURITY_SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
+  SECURITY_REDACT_OUTPUT_PII: z.enum(["true", "false"]).default("true"),
+  SECURITY_FILTER_OUTPUT_INJECTIONS: z.enum(["true", "false"]).default("true"),
+  SECURITY_VALIDATE_PROMPTS: z.enum(["true", "false"]).default("true"),
+  SECURITY_SYSTEM_PROMPT_PREAMBLE: z.enum(["true", "false"]).default("true"),
+
+  // SearXNG
+  SEARXNG_URL: internalServiceUrl("SEARXNG_URL").default("http://searxng:8080"),
+  SEARXNG_TIMEOUT: z.coerce.number().int().min(1000).default(30000),
+
+  // ComfyUI
+  IMAGE_GENERATION_ENABLED: z.enum(["true", "false"]).default("true"),
+  COMFYUI_URL: internalServiceUrl("COMFYUI_URL").default("http://comfyui:8188"),
+  COMFYUI_MAX_QUEUE: z.coerce.number().int().min(1).default(5),
+  COMFYUI_TIMEOUT: z.coerce.number().int().min(1000).default(120000),
+  COMFYUI_SLEEP_AFTER_MS: z.coerce.number().int().min(1000).default(300000),
+  COMFYUI_UNLOAD_ON_SLEEP: z.enum(["true", "false"]).default("true"),
+
+  // GPU
+  GPU_TOTAL_VRAM_MB: z.coerce.number().int().min(1024).default(24576),
+  GPU_MIN_FREE_MB: z.coerce.number().int().min(256).default(2560),
+  GPU_WARNING_THRESHOLD: z.coerce.number().min(0).max(1).default(0.75),
+  GPU_CRITICAL_THRESHOLD: z.coerce.number().min(0).max(1).default(0.9),
+  GPU_LLM_VRAM_MB: z.coerce.number().int().min(1024).default(14000),
+  GPU_IMAGE_VRAM_MB: z.coerce.number().int().min(1024).default(8000),
+  GPU_POLL_INTERVAL_MS: z.coerce.number().int().min(1000).default(5000),
+  GPU_AUTO_UNLOAD_FOR_IMAGES: z.enum(["true", "false"]).default("true"),
+
+  // Rate Limit
+  RATE_LIMIT_REQUESTS: z.coerce.number().int().min(1).default(10),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().int().min(1000).default(60000),
+
+  // Health Monitor
+  HEALTH_MONITOR_INTERVAL_MS: z.coerce.number().int().min(1000).default(30000),
+  HEALTH_MONITOR_ALERT_THRESHOLD_MS: z.coerce.number().int().min(1000).default(300000),
+});
+
+// Parse the environment
+// safeParse is used so we can format errors nicely if needed, but for now we throw if invalid
+const _env = envSchema.parse(process.env);
+
+// Export the config object structure matching the original interface
+export const config = {
+  bot: {
+    name: _env.BOT_NAME,
+    prefix: "!",
+  },
+  discord: {
+    token: _env.DISCORD_TOKEN,
+    clientId: _env.DISCORD_CLIENT_ID,
+    devGuildId: _env.DEV_GUILD_ID ?? "",
+  },
+  testing: {
+    enabled: _env.TEST_MODE === "true",
+    webhookUrl: _env.TEST_WEBHOOK_URL ?? "",
+    alwaysRespondChannelIds: _env.TEST_CHANNEL_IDS,
+    verboseLogging: _env.TEST_VERBOSE_LOGGING === "true" || _env.TEST_MODE === "true",
+  },
+  env: {
+    isProduction: _env.NODE_ENV === "production",
+    isDevelopment: _env.NODE_ENV === "development",
+  },
   llm: {
-    apiUrl: validateInternalServiceUrl(
-      process.env.OLLAMA_HOST ?? "http://ollama:11434", // NOSONAR: Internal Docker network
-      "OLLAMA_HOST"
-    ),
-    model:
-      process.env.LLM_MODEL ??
-      "hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1",
-    // Fallback model for when VRAM is constrained (smaller, can fit in limited RAM)
-    fallbackModel: process.env.LLM_FALLBACK_MODEL ?? "qwen2.5:7b",
-    maxTokens: validatePositiveInt(process.env.LLM_MAX_TOKENS, "4096", "LLM_MAX_TOKENS", 1),
-    temperature: validateFloat(process.env.LLM_TEMPERATURE, "0.7", "LLM_TEMPERATURE", 0, 2),
-    // Request timeout in ms (default 5 minutes)
-    requestTimeout: validatePositiveInt(
-      process.env.LLM_REQUEST_TIMEOUT,
-      "300000",
-      "LLM_REQUEST_TIMEOUT",
-      1000
-    ),
-    // Keep model loaded in GPU memory (seconds, -1 = forever)
-    // Using 300 (5 minutes) to balance response time and GPU memory
+    apiUrl: _env.OLLAMA_HOST,
+    model: _env.LLM_MODEL,
+    fallbackModel: _env.LLM_FALLBACK_MODEL,
+    maxTokens: _env.LLM_MAX_TOKENS,
+    temperature: _env.LLM_TEMPERATURE,
+    requestTimeout: _env.LLM_REQUEST_TIMEOUT,
     keepAlive: (() => {
-      const value = process.env.LLM_KEEP_ALIVE ?? "300";
-      if (value === "-1") return -1;
-      return validatePositiveInt(value, "300", "LLM_KEEP_ALIVE", 1);
+      const val = _env.LLM_KEEP_ALIVE;
+      if (val === "-1") return -1;
+      const parsed = Number.parseInt(val, 10);
+      return Number.isNaN(parsed) || parsed < 1 ? 300 : parsed;
     })(),
-    // Preload model on startup for faster first response
-    preloadOnStartup: process.env.LLM_PRELOAD !== "false",
-    // Inactivity timeout before sleeping (ms) - default 5 minutes
-    sleepAfterMs: validatePositiveInt(
-      process.env.LLM_SLEEP_AFTER_MS,
-      "300000",
-      "LLM_SLEEP_AFTER_MS",
-      1000
-    ),
-    // Use Orchestrator for enhanced tool-aware conversations
-    useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
-    // HERETIC-specific settings for optimal performance
+    preloadOnStartup: _env.LLM_PRELOAD === "true",
+    sleepAfterMs: _env.LLM_SLEEP_AFTER_MS,
+    useOrchestrator: _env.LLM_USE_ORCHESTRATOR === "true",
     heretic: {
-      // Recommended experts for MoE model (4-6)
-      numExperts: validatePositiveInt(process.env.LLM_NUM_EXPERTS, "5", "LLM_NUM_EXPERTS", 1),
-      // Repetition penalty (1.0-1.1 recommended)
-      repPen: validateFloat(process.env.LLM_REP_PEN, "1.1", "LLM_REP_PEN", 1, 2),
-      // Temperature for coding (0.6) vs creative (1.0-1.2)
-      tempCoding: validateFloat(process.env.LLM_TEMP_CODING, "0.6", "LLM_TEMP_CODING", 0, 2),
-      tempCreative: validateFloat(process.env.LLM_TEMP_CREATIVE, "1.0", "LLM_TEMP_CREATIVE", 0, 2),
-      // Context length (32k max, 8k minimum recommended)
-      contextLength: validatePositiveInt(
-        process.env.LLM_CONTEXT_LENGTH,
-        "4096",
-        "LLM_CONTEXT_LENGTH",
-        1024
-      ),
+      numExperts: _env.LLM_NUM_EXPERTS,
+      repPen: _env.LLM_REP_PEN,
+      tempCoding: _env.LLM_TEMP_CODING,
+      tempCreative: _env.LLM_TEMP_CREATIVE,
+      contextLength: _env.LLM_CONTEXT_LENGTH,
+    },
+    performance: {
+      numBatch: _env.LLM_NUM_BATCH,
+      numThread: _env.LLM_NUM_THREAD,
+      flashAttention: _env.LLM_FLASH_ATTENTION === "true",
+      mmap: _env.LLM_MMAP === "true",
+      mlock: _env.LLM_MLOCK === "true",
     },
   },
-
-  // Summarization model (runs on CPU to preserve GPU VRAM)
+  cloudflare: {
+    accountId: _env.CLOUDFLARE_ACCOUNT_ID ?? "",
+    apiToken: _env.CLOUDFLARE_API_TOKEN ?? "",
+    get isConfigured(): boolean {
+      return Boolean(this.accountId && this.apiToken);
+    },
+    routerModel: _env.CLOUDFLARE_ROUTER_MODEL,
+    embeddingModel: _env.CLOUDFLARE_EMBEDDING_MODEL,
+    worker: {
+      url: _env.CLOUDFLARE_WORKER_URL ?? "",
+      secret: _env.CLOUDFLARE_WORKER_SECRET ?? "",
+      get isConfigured(): boolean {
+        return Boolean(this.url);
+      },
+    },
+  },
   summarization: {
-    model: process.env.SUMMARIZATION_MODEL ?? "qwen2.5:3b",
-    // Force CPU-only for summarization
+    model: _env.SUMMARIZATION_MODEL,
     options: {
       num_gpu: 0,
     },
     maxTokens: 1024,
-    temperature: 0.3, // Lower temp for consistent summaries
+    temperature: 0.3,
   },
-
-  // Valkey Configuration (Conversation Caching)
   valkey: {
-    url: validateInternalServiceUrl(process.env.VALKEY_URL ?? "valkey://valkey:6379", "VALKEY_URL"),
-    // Conversation TTL (30 minutes of inactivity)
-    conversationTtlMs: validatePositiveInt(
-      process.env.VALKEY_CONVERSATION_TTL_MS,
-      "1800000",
-      "VALKEY_CONVERSATION_TTL_MS",
-      60000
-    ),
-    // Session prefix for namespacing
-    keyPrefix: process.env.VALKEY_KEY_PREFIX ?? "discord-bot:",
+    url: _env.VALKEY_URL,
+    conversationTtlMs: _env.VALKEY_CONVERSATION_TTL_MS,
+    keyPrefix: _env.VALKEY_KEY_PREFIX,
   },
-
-  // ChromaDB Configuration (Vector Store for Memory)
-  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
   chroma: {
-    url: validateInternalServiceUrl(process.env.CHROMA_URL ?? "http://chromadb:8000", "CHROMA_URL"), // NOSONAR: Internal Docker network
-    collectionName: process.env.CHROMA_COLLECTION ?? "memories",
+    url: _env.CHROMA_URL,
+    collectionName: _env.CHROMA_COLLECTION,
   },
-
-  // Embedding Model Configuration
   embedding: {
-    model: process.env.EMBEDDING_MODEL ?? "qwen3-embedding:0.6b",
-    // Use CPU for embeddings to preserve GPU VRAM for main LLM
+    model: _env.EMBEDDING_MODEL,
     options: {
       num_gpu: 0,
     },
   },
-
-  // Memory Configuration (ChromaDB + Three-tier architecture)
   memory: {
-    // Master switch for memory system
-    enabled: process.env.MEMORY_ENABLED !== "false",
-    // Summarization triggers
-    summarizeAfterMessages: validatePositiveInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_MESSAGES,
-      "15",
-      "MEMORY_SUMMARIZE_AFTER_MESSAGES",
-      1
-    ),
-    summarizeAfterIdleMs: validatePositiveInt(
-      process.env.MEMORY_SUMMARIZE_AFTER_IDLE_MS,
-      "1800000",
-      "MEMORY_SUMMARIZE_AFTER_IDLE_MS",
-      60000
-    ), // 30 minutes
-    // Context window allocation
-    maxContextTokens: validatePositiveInt(
-      process.env.MEMORY_MAX_CONTEXT_TOKENS,
-      "4096",
-      "MEMORY_MAX_CONTEXT_TOKENS",
-      1024
-    ),
-    // Tier allocation percentages
+    enabled: _env.MEMORY_ENABLED === "true",
+    summarizeAfterMessages: _env.MEMORY_SUMMARIZE_AFTER_MESSAGES,
+    summarizeAfterIdleMs: _env.MEMORY_SUMMARIZE_AFTER_IDLE_MS,
+    maxContextTokens: _env.MEMORY_MAX_CONTEXT_TOKENS,
     tierAllocation: {
-      activeContext: 0.5, // 50% for current conversation
-      userProfile: 0.3, // 30% for user preferences/facts
-      episodic: 0.2, // 20% for relevant past sessions
+      activeContext: 0.5,
+      userProfile: 0.3,
+      episodic: 0.2,
     },
-    // Relevance thresholds - memories below these scores are filtered out
     relevanceThresholds: {
-      userProfile: validateFloat(
-        process.env.MEMORY_PROFILE_THRESHOLD,
-        "0.4",
-        "MEMORY_PROFILE_THRESHOLD",
-        0,
-        1
-      ), // User preferences/facts need moderate relevance
-      episodic: validateFloat(
-        process.env.MEMORY_EPISODIC_THRESHOLD,
-        "0.55",
-        "MEMORY_EPISODIC_THRESHOLD",
-        0,
-        1
-      ), // Past conversations need higher relevance to avoid pollution
+      userProfile: _env.MEMORY_PROFILE_THRESHOLD,
+      episodic: _env.MEMORY_EPISODIC_THRESHOLD,
     },
-    // Time decay - older memories are weighted less (multiplier per day old)
-    timeDecayPerDay: validateFloat(
-      process.env.MEMORY_TIME_DECAY_PER_DAY,
-      "0.98",
-      "MEMORY_TIME_DECAY_PER_DAY",
-      0.5,
-      1
-    ), // 2% decay per day, so 30-day old memory = 0.98^30 ≈ 0.55 multiplier
-    // Minimum importance score for memories to be stored (0-1)
-    minImportanceForStorage: validateFloat(
-      process.env.MEMORY_MIN_IMPORTANCE,
-      "0.3",
-      "MEMORY_MIN_IMPORTANCE",
-      0,
-      1
-    ),
+    timeDecayPerDay: _env.MEMORY_TIME_DECAY_PER_DAY,
+    strengthDecayDays: _env.MEMORY_STRENGTH_DECAY_DAYS,
+    consolidationThreshold: _env.MEMORY_CONSOLIDATION_THRESHOLD,
+    minImportanceForStorage: _env.MEMORY_MIN_IMPORTANCE,
   },
-
-  // MCP Configuration (Model Context Protocol)
   mcp: {
-    // Config file location for stdio-based MCP servers
-    configPath: process.env.MCP_CONFIG_PATH ?? "./mcp-servers.json",
-    // Connection timeout
-    connectionTimeoutMs: validatePositiveInt(
-      process.env.MCP_CONNECTION_TIMEOUT_MS,
-      "30000",
-      "MCP_CONNECTION_TIMEOUT_MS",
-      1000
-    ),
-    // Request timeout
-    requestTimeoutMs: validatePositiveInt(
-      process.env.MCP_REQUEST_TIMEOUT_MS,
-      "60000",
-      "MCP_REQUEST_TIMEOUT_MS",
-      1000
-    ),
-    // Docker MCP Gateway (Docker Desktop MCP Toolkit)
+    configPath: _env.MCP_CONFIG_PATH,
+    connectionTimeoutMs: _env.MCP_CONNECTION_TIMEOUT_MS,
+    requestTimeoutMs: _env.MCP_REQUEST_TIMEOUT_MS,
     dockerGateway: {
-      // Enable Docker MCP Gateway integration
-      enabled: process.env.DOCKER_MCP_ENABLED === "true",
-      // Transport type: "stdio" (recommended, spawns gateway process) or "http" (StreamableHTTP)
-      // stdio: More stable, spawns `docker mcp gateway run` as child process
-      // http: Connects to externally running gateway via StreamableHTTP transport
-      transport: (process.env.DOCKER_MCP_TRANSPORT ?? "stdio") as "stdio" | "http",
-      // Gateway URL (only used for HTTP transport)
-      // SECURITY: Default uses HTTP for host.docker.internal which is a Docker internal address.
-      // This is NOT exposed externally and runs within Docker's isolated network.
-      url: validateInternalServiceUrl(
-        process.env.DOCKER_MCP_GATEWAY_URL ?? "http://host.docker.internal:8811", // NOSONAR: Internal Docker network
-        "DOCKER_MCP_GATEWAY_URL"
-      ),
-      // MCP endpoint path (only used for HTTP transport)
-      endpoint: process.env.DOCKER_MCP_GATEWAY_ENDPOINT ?? "/mcp",
-      // Bearer token for authentication (used for HTTP transport)
-      bearerToken: process.env.DOCKER_MCP_BEARER_TOKEN ?? "",
-      // Reconnect on failure
-      autoReconnect: process.env.DOCKER_MCP_AUTO_RECONNECT !== "false",
-      // Max reconnection attempts
-      maxReconnectAttempts: validatePositiveInt(
-        process.env.DOCKER_MCP_MAX_RECONNECT_ATTEMPTS,
-        "5",
-        "DOCKER_MCP_MAX_RECONNECT_ATTEMPTS",
-        0
-      ),
+      enabled: _env.DOCKER_MCP_ENABLED === "true",
+      transport: _env.DOCKER_MCP_TRANSPORT,
+      url: _env.DOCKER_MCP_GATEWAY_URL,
+      endpoint: _env.DOCKER_MCP_GATEWAY_ENDPOINT,
+      bearerToken: _env.DOCKER_MCP_BEARER_TOKEN ?? "",
+      autoReconnect: _env.DOCKER_MCP_AUTO_RECONNECT === "true",
+      maxReconnectAttempts: _env.DOCKER_MCP_MAX_RECONNECT_ATTEMPTS,
     },
   },
-
-  // Security Configuration
   security: {
-    // Owner user IDs (comma-separated in env)
-    ownerIds: (process.env.BOT_OWNER_IDS ?? "").split(",").filter(Boolean),
-    adminIds: (process.env.BOT_ADMIN_IDS ?? "").split(",").filter(Boolean),
-    moderatorIds: (process.env.BOT_MODERATOR_IDS ?? "").split(",").filter(Boolean),
-
-    // Impersonation detection
+    ownerIds: _env.BOT_OWNER_IDS,
+    adminIds: _env.BOT_ADMIN_IDS,
+    moderatorIds: _env.BOT_MODERATOR_IDS,
     impersonation: {
-      enabled: process.env.SECURITY_IMPERSONATION_ENABLED !== "false",
-      // Similarity threshold for name matching (0.0-1.0)
-      similarityThreshold: validateFloat(
-        process.env.SECURITY_SIMILARITY_THRESHOLD,
-        "0.7",
-        "SECURITY_SIMILARITY_THRESHOLD",
-        0,
-        1
-      ),
-      // Patterns that indicate impersonation attempts
+      enabled: _env.SECURITY_IMPERSONATION_ENABLED === "true",
+      similarityThreshold: _env.SECURITY_SIMILARITY_THRESHOLD,
       suspiciousPatterns: [
         /pretend\s+(to\s+)?be/i,
         /you\s+are\s+(now\s+)?(?:the\s+)?owner/i,
@@ -361,128 +313,62 @@ export const config = {
         /grant\s+(me\s+)?access/i,
       ],
     },
-
-    // Tool access control
     tools: {
-      // Always blocked tools (even for owners must use explicit override)
       alwaysBlocked: ["filesystem_delete", "filesystem_write"],
-      // Owner-only tools (completely hidden from non-owners)
       ownerOnly: ["filesystem_read", "filesystem_list", "execute_command", "mcp_server_restart"],
-      // Admin+ tools
       adminOnly: ["user_ban", "user_kick", "channel_purge"],
-      // Moderator+ tools
       moderatorOnly: ["user_timeout", "message_delete"],
     },
-  },
-
-  // SearXNG Configuration (Web Search)
-  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
-  searxng: {
-    url: validateInternalServiceUrl(
-      process.env.SEARXNG_URL ?? "http://searxng:8080", // NOSONAR: Internal Docker network
-      "SEARXNG_URL"
-    ),
-    // Default number of results to return
-    defaultResults: 10,
-    // Timeout for search requests (ms)
-    timeout: validatePositiveInt(process.env.SEARXNG_TIMEOUT, "30000", "SEARXNG_TIMEOUT", 1000),
-  },
-
-  // ComfyUI Configuration (Image Generation)
-  // SECURITY: Internal Docker service URL - uses HTTP on isolated Docker network, not exposed externally.
-  comfyui: {
-    url: validateInternalServiceUrl(
-      process.env.COMFYUI_URL ?? "http://comfyui:8188", // NOSONAR: Internal Docker network
-      "COMFYUI_URL"
-    ),
-    // Default workflow for Z-Image-Turbo
-    defaultModel: "z-image-turbo",
-    // Max queue size to prevent overloading
-    maxQueueSize: validatePositiveInt(process.env.COMFYUI_MAX_QUEUE, "5", "COMFYUI_MAX_QUEUE", 1),
-    // Timeout for image generation (ms) - default 2 minutes
-    timeout: validatePositiveInt(process.env.COMFYUI_TIMEOUT, "120000", "COMFYUI_TIMEOUT", 1000),
-    // Inactivity timeout before unloading models (ms) - default 5 minutes (matches LLM)
-    sleepAfterMs: validatePositiveInt(
-      process.env.COMFYUI_SLEEP_AFTER_MS,
-      "300000",
-      "COMFYUI_SLEEP_AFTER_MS",
-      1000
-    ),
-    // Whether to unload models when sleeping (calls /free endpoint)
-    unloadOnSleep: process.env.COMFYUI_UNLOAD_ON_SLEEP !== "false",
-  },
-
-  // GPU/VRAM Configuration
-  gpu: {
-    // Total VRAM available (MB) - RTX 4090 = 24576, RTX 4080 = 16384, etc.
-    totalVRAM: validatePositiveInt(
-      process.env.GPU_TOTAL_VRAM_MB,
-      "24576",
-      "GPU_TOTAL_VRAM_MB",
-      1024
-    ),
-    // Minimum free VRAM buffer to maintain (MB)
-    minFreeBuffer: validatePositiveInt(process.env.GPU_MIN_FREE_MB, "2048", "GPU_MIN_FREE_MB", 256),
-    // VRAM usage thresholds
-    warningThreshold: validateFloat(
-      process.env.GPU_WARNING_THRESHOLD,
-      "0.75",
-      "GPU_WARNING_THRESHOLD",
-      0,
-      1
-    ),
-    criticalThreshold: validateFloat(
-      process.env.GPU_CRITICAL_THRESHOLD,
-      "0.90",
-      "GPU_CRITICAL_THRESHOLD",
-      0,
-      1
-    ),
-    // Estimated VRAM usage per task (MB)
-    estimatedLLMVRAM: validatePositiveInt(
-      process.env.GPU_LLM_VRAM_MB,
-      "14000",
-      "GPU_LLM_VRAM_MB",
-      1024
-    ),
-    estimatedImageVRAM: validatePositiveInt(
-      process.env.GPU_IMAGE_VRAM_MB,
-      "8000",
-      "GPU_IMAGE_VRAM_MB",
-      1024
-    ),
-    // VRAM monitoring interval (ms)
-    pollInterval: validatePositiveInt(
-      process.env.GPU_POLL_INTERVAL_MS,
-      "5000",
-      "GPU_POLL_INTERVAL_MS",
-      1000
-    ),
-    // Auto-unload LLM for image generation if VRAM is tight
-    autoUnloadForImages: process.env.GPU_AUTO_UNLOAD_FOR_IMAGES !== "false",
-  },
-
-  // Rate limiting
-  rateLimit: {
-    requests: validatePositiveInt(process.env.RATE_LIMIT_REQUESTS, "10", "RATE_LIMIT_REQUESTS", 1),
-    windowMs: validatePositiveInt(
-      process.env.RATE_LIMIT_WINDOW_MS,
-      "60000",
-      "RATE_LIMIT_WINDOW_MS",
-      1000
-    ),
-    // Soft limit warnings before hard block
-    softLimitThreshold: 0.8, // Warn at 80% of limit
-    // Exponential backoff settings
-    backoff: {
-      enabled: true,
-      baseMs: 5000, // Base wait time
-      maxMs: 300000, // Max wait time (5 minutes)
-      multiplier: 2, // Exponential multiplier
+    output: {
+      redactPII: _env.SECURITY_REDACT_OUTPUT_PII === "true",
+      filterInjectionPatterns: _env.SECURITY_FILTER_OUTPUT_INJECTIONS === "true",
+    },
+    input: {
+      validatePrompts: _env.SECURITY_VALIDATE_PROMPTS === "true",
+    },
+    systemPrompt: {
+      includeSecurityPreamble: _env.SECURITY_SYSTEM_PROMPT_PREAMBLE === "true",
     },
   },
-
-  // Colors for embeds
+  searxng: {
+    url: _env.SEARXNG_URL,
+    defaultResults: 10,
+    timeout: _env.SEARXNG_TIMEOUT,
+  },
+  comfyui: {
+    enabled: _env.IMAGE_GENERATION_ENABLED === "true",
+    url: _env.COMFYUI_URL,
+    defaultModel: "z-image-turbo",
+    maxQueueSize: _env.COMFYUI_MAX_QUEUE,
+    timeout: _env.COMFYUI_TIMEOUT,
+    sleepAfterMs: _env.COMFYUI_SLEEP_AFTER_MS,
+    unloadOnSleep: _env.COMFYUI_UNLOAD_ON_SLEEP === "true",
+  },
+  gpu: {
+    totalVRAM: _env.GPU_TOTAL_VRAM_MB,
+    minFreeBuffer: _env.GPU_MIN_FREE_MB,
+    warningThreshold: _env.GPU_WARNING_THRESHOLD,
+    criticalThreshold: _env.GPU_CRITICAL_THRESHOLD,
+    estimatedLLMVRAM: _env.GPU_LLM_VRAM_MB,
+    estimatedImageVRAM: _env.GPU_IMAGE_VRAM_MB,
+    pollInterval: _env.GPU_POLL_INTERVAL_MS,
+    autoUnloadForImages: _env.GPU_AUTO_UNLOAD_FOR_IMAGES === "true",
+  },
+  rateLimit: {
+    requests: _env.RATE_LIMIT_REQUESTS,
+    windowMs: _env.RATE_LIMIT_WINDOW_MS,
+    softLimitThreshold: 0.8,
+    backoff: {
+      enabled: true,
+      baseMs: 5000,
+      maxMs: 300000,
+      multiplier: 2,
+    },
+  },
+  healthMonitor: {
+    checkIntervalMs: _env.HEALTH_MONITOR_INTERVAL_MS,
+    alertThresholdMs: _env.HEALTH_MONITOR_ALERT_THRESHOLD_MS,
+  },
   colors: {
     primary: 0x5865f2,
     success: 0x57f287,

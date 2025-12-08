@@ -3,8 +3,8 @@
  * Provides startup health checks for external dependencies
  */
 
-import { createLogger } from "./logger.js";
 import config from "../config.js";
+import { createLogger } from "./logger.js";
 
 const log = createLogger("Health");
 
@@ -87,7 +87,7 @@ async function checkWithRetry(
     lastResult = result;
 
     if (attempt < maxRetries) {
-      const delay = baseDelayMs * Math.pow(1.5, attempt - 1);
+      const delay = baseDelayMs * 1.5 ** (attempt - 1);
       log.warn(
         `${service.name} not ready (attempt ${attempt}/${maxRetries}), retrying in ${Math.round(
           delay
@@ -110,7 +110,7 @@ async function checkWithRetry(
  * Define all services to check
  */
 function getServiceConfigs(): ServiceConfig[] {
-  return [
+  const services: ServiceConfig[] = [
     {
       name: "Ollama",
       url: config.llm.apiUrl,
@@ -123,13 +123,19 @@ function getServiceConfigs(): ServiceConfig[] {
       path: "/api/v2/heartbeat",
       optional: true, // Memory system is optional
     },
-    {
+  ];
+
+  // Only include ComfyUI if image generation is enabled
+  if (config.comfyui.enabled) {
+    services.push({
       name: "ComfyUI",
       url: config.comfyui.url,
       path: "/system_stats",
-      optional: true, // Image generation is optional
-    },
-  ];
+      optional: true, // Image generation is optional even when enabled
+    });
+  }
+
+  return services;
 }
 
 /**

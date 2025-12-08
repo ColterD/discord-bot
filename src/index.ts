@@ -5,21 +5,25 @@ import "dotenv/config";
 import { dirname, importx } from "@discordx/importer";
 import { IntentsBitField, Options, Partials } from "discord.js";
 import { Client } from "discordx";
-import { startPresenceUpdater, stopPresenceUpdater } from "./utils/presence.js";
 import { getConversationService } from "./ai/conversation.js";
-import { getRateLimiter } from "./utils/rate-limiter.js";
 import { getAIService } from "./ai/service.js";
-import { getVRAMManager } from "./utils/vram-manager.js";
-import { mcpManager } from "./mcp/index.js";
-import { createLogger } from "./utils/logger.js";
-import { waitForServices } from "./utils/health.js";
-import { abortAllPendingRequests } from "./utils/fetch.js";
-import { startMemoryMonitor, stopMemoryMonitor } from "./utils/memory.js";
-import { NotBot } from "./guards/index.js";
-import { cleanupRateLimitGuard } from "./guards/rate-limit.guard.js";
-import { cleanupMessageDeduplication } from "./events/message.js";
 // ReadyEvent is loaded dynamically via importx - do NOT import here to avoid circular dependency
 import config from "./config.js";
+import { CLEANUP_INTERVAL_MS } from "./constants.js";
+import { cleanupMessageDeduplication } from "./events/message.js";
+import { NotBot } from "./guards/index.js";
+import { cleanupRateLimitGuard } from "./guards/rate-limit.guard.js";
+import { mcpManager } from "./mcp/index.js";
+import { getNotificationService, startHealthMonitor, stopHealthMonitor } from "./services/index.js";
+import { startMaintenanceScheduler, stopMaintenanceScheduler } from "./services/maintenance.js";
+import { getSchedulerService } from "./services/scheduler.js";
+import { abortAllPendingRequests } from "./utils/fetch.js";
+import { waitForServices } from "./utils/health.js";
+import { createLogger } from "./utils/logger.js";
+import { startMemoryMonitor, stopMemoryMonitor } from "./utils/memory.js";
+import { startPresenceUpdater, stopPresenceUpdater } from "./utils/presence.js";
+import { getRateLimiter } from "./utils/rate-limiter.js";
+import { getVRAMManager } from "./utils/vram/index.js";
 
 // Create logger for main module
 const log = createLogger("Main");
@@ -153,6 +157,11 @@ async function bootstrap(): Promise<void> {
   await client.login(token);
   log.info("Discord login successful");
 
+  // Initialize Scheduler Service
+  const schedulerService = getSchedulerService();
+  schedulerService.setClient(client);
+  log.info("Scheduler service initialized");
+
   // Initialize MCP servers for tool integration
   if (config.llm.useOrchestrator) {
     mcpManager.initialize().catch((error) => {
@@ -179,7 +188,6 @@ async function bootstrap(): Promise<void> {
   startMemoryMonitor(60000);
 
   // Start periodic cleanup for conversations and rate limiter (every 5 minutes)
-  const CLEANUP_INTERVAL = 5 * 60 * 1000;
   cleanupIntervalId = setInterval(() => {
     const conversationService = getConversationService();
     const rateLimiter = getRateLimiter();
@@ -190,7 +198,19 @@ async function bootstrap(): Promise<void> {
     if (conversationsCleared > 0) {
       log.debug(`Cleared ${conversationsCleared} expired conversations`);
     }
-  }, CLEANUP_INTERVAL);
+  }, CLEANUP_INTERVAL_MS);
+
+  // Start maintenance scheduler (runs every 12 hours for deep cleanup)
+  startMaintenanceScheduler();
+
+  // Initialize notification service with Discord client
+  const notificationService = getNotificationService();
+  notificationService.setClient(client);
+  log.info("Notification service initialized");
+
+  // Start health monitor for self-healing infrastructure
+  startHealthMonitor();
+  log.info("Health monitor started");
 }
 
 /**
@@ -210,6 +230,13 @@ async function shutdown(signal: string): Promise<void> {
 
     // Stop memory monitoring
     stopMemoryMonitor();
+
+    // Stop health monitor
+    stopHealthMonitor();
+    log.debug("Health monitor stopped");
+
+    // Stop maintenance scheduler
+    stopMaintenanceScheduler();
 
     // Stop presence updater
     stopPresenceUpdater();
@@ -248,6 +275,11 @@ async function shutdown(signal: string): Promise<void> {
     await cacheManager.shutdown();
     log.debug("Cache manager shut down");
 
+    // Clean up distributed lock manager
+    const { lockManager } = await import("./utils/distributed-lock.js");
+    await lockManager.shutdown();
+    log.debug("Distributed lock manager shut down");
+
     // Clean up rate limit guard interval
     cleanupRateLimitGuard();
     log.debug("Rate limit guard cleaned up");
@@ -255,6 +287,10 @@ async function shutdown(signal: string): Promise<void> {
     // Clean up message deduplication
     cleanupMessageDeduplication();
     log.debug("Message deduplication cleaned up");
+
+    // Shutdown Scheduler Service
+    await getSchedulerService().close();
+    log.debug("Scheduler service shut down");
 
     log.info("Shutdown complete");
     process.exit(0);

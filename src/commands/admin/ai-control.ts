@@ -1,7 +1,8 @@
-import { Discord, Slash, Guard } from "discordx";
 import { type CommandInteraction, EmbedBuilder } from "discord.js";
-import { OwnerGuard } from "../../guards/owner.guard.js";
+import { Discord, Guard, Slash } from "discordx";
 import { getAIControlService } from "../../ai/control.js";
+import { OwnerGuard } from "../../guards/owner.guard.js";
+import { getLastMaintenanceRun, triggerMaintenance } from "../../services/maintenance.js";
 
 @Discord()
 export class AdminCommands {
@@ -103,6 +104,41 @@ export class AdminCommands {
     if (status.error) {
       embed.addFields({ name: "Error", value: status.error });
     }
+
+    await interaction.editReply({ embeds: [embed] });
+  }
+
+  /**
+   * Trigger system maintenance
+   */
+  @Slash({
+    name: "maintenance",
+    description: "🔒 Run system maintenance tasks (Owner only)",
+  })
+  @Guard(OwnerGuard())
+  async maintenance(interaction: CommandInteraction): Promise<void> {
+    await interaction.deferReply({ ephemeral: true });
+
+    const lastRun = getLastMaintenanceRun();
+    const result = await triggerMaintenance();
+
+    const embed = new EmbedBuilder()
+      .setTitle("🧹 Maintenance Complete")
+      .setColor(0x00aaff)
+      .addFields(
+        { name: "Duration", value: `${result.duration}ms`, inline: true },
+        { name: "Conversations Cleared", value: `${result.conversationsCleared}`, inline: true },
+        { name: "Rate Limiter", value: result.rateLimiterCleared ? "✅" : "❌", inline: true },
+        { name: "Deduplication", value: result.deduplicationCleared ? "✅" : "❌", inline: true },
+        { name: "Cache", value: result.cacheCleared ? "✅" : "❌", inline: true },
+        {
+          name: "Previous Run",
+          value: lastRun ? `<t:${Math.floor(lastRun.getTime() / 1000)}:R>` : "Never",
+          inline: true,
+        }
+      )
+      .setFooter({ text: "Automatic maintenance runs every 12 hours" })
+      .setTimestamp();
 
     await interaction.editReply({ embeds: [embed] });
   }

@@ -5,7 +5,7 @@
 
 import config from "../config.js";
 import { createLogger } from "../utils/logger.js";
-import { getVRAMManager } from "../utils/vram-manager.js";
+import { getVRAMManager } from "../utils/vram/index.js";
 
 const log = createLogger("ImageService");
 
@@ -536,7 +536,8 @@ export class ImageService {
       log.warn(`VRAM manager denied image generation for ${userId} - insufficient memory`);
       return {
         success: false,
-        error: "GPU memory is currently in use. Please try again in a moment.",
+        error:
+          "Image generation failed: GPU memory is insufficient. Please inform the user that image generation is temporarily unavailable due to GPU memory constraints. They can try again later when resources are free.",
       };
     }
 
@@ -558,10 +559,11 @@ export class ImageService {
     }
 
     // Sanitize prompt
-    const sanitizedPrompt = this.sanitizePrompt(prompt);
-    if (!sanitizedPrompt) {
-      return { success: false, error: "Invalid or empty prompt" };
+    const sanitizeResult = this.sanitizePrompt(prompt);
+    if (!sanitizeResult.valid) {
+      return { success: false, error: sanitizeResult.error };
     }
+    const sanitizedPrompt = sanitizeResult.text;
 
     try {
       // Build the workflow for Z-Image-Turbo
@@ -724,32 +726,38 @@ export class ImageService {
   }
 
   /**
-   * Build a ComfyUI workflow for Z-Image-Turbo GGUF
-   * Uses GGUF quantized model with separate text encoder and VAE
+   * Build a ComfyUI workflow for Z-Image-Turbo
+   * Based on official ComfyUI example: https://comfyanonymous.github.io/ComfyUI_examples/z_image/
    */
   private buildWorkflow(
     prompt: string,
     options: { width: number; height: number; steps: number; seed: number }
   ): Record<string, unknown> {
-    // Z-Image-Turbo GGUF workflow
-    // Requires: UnetLoaderGGUF, CLIPLoaderGGUF, ModelSamplingAuraFlow
+    // Z-Image-Turbo official workflow from ComfyUI examples
+    // Required models (in text_encoders/, diffusion_models/, vae/ folders):
+    //   - text_encoders/qwen_3_4b.safetensors
+    //   - diffusion_models/z_image_turbo_bf16.safetensors
+    //   - vae/ae.safetensors
     return {
-      // Load GGUF diffusion model
+      // Load diffusion model (UNet)
       "1": {
-        class_type: "UnetLoaderGGUF",
+        class_type: "UNETLoader",
         inputs: {
-          unet_name: "z_image_turbo-Q8_0.gguf",
+          unet_name: "z_image_turbo_bf16.safetensors",
+          weight_dtype: "default",
         },
       },
-      // Load GGUF text encoder (Qwen3-4B)
+      // Load text encoder (Qwen3-4B) - official workflow uses CLIPLoader with dtype "default"
       "2": {
-        class_type: "CLIPLoaderGGUF",
+        class_type: "CLIPLoader",
         inputs: {
-          clip_name: "Qwen3-4B-UD-Q8_K_XL.gguf",
+          clip_name: "qwen_3_4b.safetensors",
           type: "lumina2",
+          device: "default",
         },
       },
-      // Apply AuraFlow sampling (required for Z-Image)
+      // ModelSamplingAuraFlow - in official workflow this is mode=4 (bypassed)
+      // but including it for compatibility
       "3": {
         class_type: "ModelSamplingAuraFlow",
         inputs: {
@@ -765,15 +773,15 @@ export class ImageService {
           text: prompt,
         },
       },
-      // Negative prompt
+      // Negative prompt - official workflow uses regular CLIPTextEncode with "blurry ugly bad"
       "5": {
         class_type: "CLIPTextEncode",
         inputs: {
           clip: ["2", 0],
-          text: "blurry ugly bad low quality",
+          text: "blurry ugly bad",
         },
       },
-      // SD3 latent (required for this architecture)
+      // SD3 latent
       "6": {
         class_type: "EmptySD3LatentImage",
         inputs: {
@@ -789,7 +797,7 @@ export class ImageService {
           vae_name: "ae.safetensors",
         },
       },
-      // KSampler
+      // KSampler - official settings: steps=9, cfg=1, euler, simple
       "8": {
         class_type: "KSampler",
         inputs: {
@@ -825,21 +833,41 @@ export class ImageService {
   }
 
   /**
-   * Sanitize prompt text
+   * Sanitize and validate prompt
+   * Z-Image-Turbo works best with concise, specific prompts
+   * Optimal length is 100-500 characters
    */
-  private sanitizePrompt(prompt: string): string | null {
-    if (!prompt || typeof prompt !== "string") return null;
+  private sanitizePrompt(
+    prompt: string
+  ): { valid: true; text: string } | { valid: false; error: string } {
+    if (!prompt || typeof prompt !== "string") {
+      return { valid: false, error: "Prompt must be a non-empty string" };
+    }
 
     // Remove control characters (U+0000-U+001F and U+007F) and excessive whitespace
     const controlCharRegex = /[\u0000-\u001F\u007F]/g; // NOSONAR: Regex intentionally matches control characters to remove them
-    const cleaned = prompt.replaceAll(controlCharRegex, "").replaceAll(/\s+/g, " ").trim();
+    let cleaned = prompt.replaceAll(controlCharRegex, "").replaceAll(/\s+/g, " ").trim();
 
-    // Check length
-    if (cleaned.length < 3 || cleaned.length > 1000) {
-      return null;
+    // Check minimum length
+    if (cleaned.length < 3) {
+      return { valid: false, error: "Prompt is too short (minimum 3 characters)" };
     }
 
-    return cleaned;
+    // Z-Image-Turbo supports max_sequence_length=1024 tokens (up from default 512)
+    // Official docs say it "works best with LONG, DETAILED prompts"
+    // 2000 chars ≈ 400-500 tokens, plenty of room for detailed descriptions
+    const MAX_PROMPT_LENGTH = 2000;
+    if (cleaned.length > MAX_PROMPT_LENGTH) {
+      log.warn(`Prompt truncated from ${cleaned.length} to ${MAX_PROMPT_LENGTH} chars`);
+      // Truncate at last complete word
+      cleaned = cleaned.slice(0, MAX_PROMPT_LENGTH);
+      const lastSpace = cleaned.lastIndexOf(" ");
+      if (lastSpace > MAX_PROMPT_LENGTH - 100) {
+        cleaned = cleaned.slice(0, lastSpace);
+      }
+    }
+
+    return { valid: true, text: cleaned };
   }
 
   /**
@@ -884,7 +912,37 @@ export class ImageService {
 // Singleton instance
 let instance: ImageService | null = null;
 
+/**
+ * Check if the image service has been initialized
+ * Use this to avoid forcing initialization when just checking state
+ */
+export function isImageServiceInitialized(): boolean {
+  return instance !== null;
+}
+
+/**
+ * Get the image service if it's already initialized, otherwise return null
+ * Use this in presence updates to avoid forcing initialization
+ */
+export function getImageServiceIfLoaded(): ImageService | null {
+  return instance;
+}
+
+/**
+ * Check if image generation is enabled in config
+ */
+export function isImageGenerationEnabled(): boolean {
+  return config.comfyui.enabled;
+}
+
+/**
+ * Get or create the image service singleton
+ * This will initialize the service if not already done
+ */
 export function getImageService(): ImageService {
+  if (!config.comfyui.enabled) {
+    throw new Error("Image generation is disabled. Check IMAGE_GENERATION_ENABLED in .env");
+  }
   instance ??= new ImageService();
   return instance;
 }
@@ -895,15 +953,18 @@ export type { ImageResult, QueueStatus };
 
 /**
  * Style presets for image generation
+ * Optimized for Z-Image-Turbo which excels at photorealism
+ * Uses lighting keywords as recommended in Z-Image docs
  */
 const STYLE_PRESETS: Record<string, string> = {
-  realistic: "photorealistic, highly detailed, 8k, professional photography",
-  anime: "anime style, vibrant colors, studio ghibli inspired, detailed",
-  "digital-art": "digital art, concept art, artstation trending, highly detailed",
-  "oil-painting": "oil painting, classical art style, textured, masterpiece",
-  watercolor: "watercolor painting, soft colors, artistic, flowing",
-  sketch: "pencil sketch, detailed line art, black and white, artistic",
-  "3d-render": "3d render, octane render, unreal engine, highly detailed, volumetric lighting",
+  realistic:
+    "photorealistic, highly detailed, sharp focus, professional photography, cinematic lighting",
+  anime: "anime style, vibrant colors, detailed illustration, studio lighting",
+  "digital-art": "digital art, concept art, highly detailed, dramatic lighting, artstation",
+  "oil-painting": "oil painting, classical art style, textured brushstrokes, volumetric lighting",
+  watercolor: "watercolor painting, soft colors, artistic, flowing, natural lighting",
+  sketch: "pencil sketch, detailed line art, black and white, studio softbox lighting",
+  "3d-render": "3d render, octane render, unreal engine, volumetric lighting, ray tracing",
 };
 
 /**
@@ -924,6 +985,66 @@ export interface GenerateImageToolResult {
 }
 
 /**
+ * Enhance a user's image request into an optimized Z-Image-Turbo prompt
+ * Follows best practices from Z-Image documentation:
+ * - Be specific about subject, pose, outfit, background
+ * - Use lighting keywords (volumetric, dramatic, cinematic, studio)
+ * - Keep it concise (100-400 chars is optimal)
+ * - Focus on photorealism unless style override specified
+ *
+ * @param userRequest - The user's original image request
+ * @param style - Optional style preset to apply
+ * @returns Optimized prompt string
+ */
+function enhancePromptForZImage(userRequest: string, style?: string): string {
+  // Start with the user's request
+  let prompt = userRequest.trim();
+
+  // Official Z-Image prompting guide:
+  // - Works best with LONG, DETAILED descriptions
+  // - NO meta-tags like "8K", "masterpiece", "quality" (they degrade output)
+  // - Focus on concrete visual details: composition, lighting, materials, textures
+  // - Be objective and specific, avoid metaphors
+
+  // Check if prompt already has lighting info
+  const hasLightingKeywords =
+    /\b(lighting|lit|cinematic|dramatic|volumetric|softbox|studio|natural light|ambient|backlit)\b/i.test(
+      prompt
+    );
+
+  // Check if prompt has composition/framing
+  const hasComposition =
+    /\b(close-up|wide shot|portrait|landscape|full body|overhead|angle|perspective|framing)\b/i.test(
+      prompt
+    );
+
+  // Build enhancement suffix with concrete visual details (not meta-tags)
+  const enhancements: string[] = [];
+
+  // Add lighting if not present (recommended in Z-Image docs)
+  if (!hasLightingKeywords) {
+    enhancements.push("soft natural lighting");
+  }
+
+  // Add composition hint if not present
+  if (!hasComposition) {
+    enhancements.push("balanced composition");
+  }
+
+  // Apply style preset if specified
+  if (style && STYLE_PRESETS[style]) {
+    enhancements.push(STYLE_PRESETS[style]);
+  }
+
+  // Combine prompt with enhancements
+  if (enhancements.length > 0) {
+    prompt = `${prompt}, ${enhancements.join(", ")}`;
+  }
+
+  return prompt;
+}
+
+/**
  * Execute image generation as a tool call
  * @param args - Tool arguments
  * @param userId - User ID making the request
@@ -933,6 +1054,14 @@ export async function executeImageGenerationTool(
   args: GenerateImageToolArgs,
   userId: string
 ): Promise<GenerateImageToolResult> {
+  // Check if image generation is enabled
+  if (!config.comfyui.enabled) {
+    return {
+      success: false,
+      message: "Image generation is currently disabled.",
+    };
+  }
+
   const service = getImageService();
 
   // Check if service is available
@@ -953,11 +1082,10 @@ export async function executeImageGenerationTool(
     };
   }
 
-  // Build enhanced prompt with style
-  let enhancedPrompt = args.prompt;
-  if (args.style && STYLE_PRESETS[args.style]) {
-    enhancedPrompt = `${args.prompt}, ${STYLE_PRESETS[args.style]}`;
-  }
+  // Enhance the prompt using Z-Image best practices
+  // This converts simple user requests into optimized prompts
+  const enhancedPrompt = enhancePromptForZImage(args.prompt, args.style);
+  log.info(`Enhanced prompt: "${args.prompt}" -> "${enhancedPrompt.slice(0, 100)}..."`);
 
   // Note: negative_prompt is available for future workflow enhancements
   // Currently Z-Image-Turbo doesn't use it directly
@@ -965,10 +1093,11 @@ export async function executeImageGenerationTool(
 
   try {
     // Generate the image
+    // Official Tongyi-MAI settings: num_inference_steps=9, guidance_scale=0
     const result = await service.generateImage(enhancedPrompt, userId, {
       width: 1024,
       height: 1024,
-      steps: 4,
+      steps: 9,
       seed: -1, // Random seed
     });
 

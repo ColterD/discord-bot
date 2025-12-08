@@ -28,36 +28,20 @@ export interface ToolResult {
   error?: string;
 }
 
+import config from "../config.js";
+
 /**
- * Ollama Native Tool Calling Types
+ * Get the list of available tools, filtered based on configuration
+ * This filters out tools that are disabled (e.g., generate_image when image generation is off)
  */
-export interface OllamaToolFunction {
-  readonly name: string;
-  readonly description: string;
-  readonly parameters: {
-    readonly type: "object";
-    readonly required: string[];
-    readonly properties: Record<
-      string,
-      {
-        readonly type: string;
-        readonly description: string;
-        readonly enum?: string[];
-      }
-    >;
-  };
-}
-
-export interface OllamaTool {
-  readonly type: "function";
-  readonly function: OllamaToolFunction;
-}
-
-export interface OllamaToolCall {
-  readonly function: {
-    readonly name: string;
-    readonly arguments: Record<string, unknown>;
-  };
+export function getAvailableTools(): Tool[] {
+  return AGENT_TOOLS.filter((tool) => {
+    // Filter out generate_image when image generation is disabled
+    if (tool.name === "generate_image" && !config.comfyui.enabled) {
+      return false;
+    }
+    return true;
+  });
 }
 
 /**
@@ -137,12 +121,14 @@ export const AGENT_TOOLS: Tool[] = [
   },
   {
     name: "get_time",
-    description: "Get current time in a specific timezone or convert between timezones.",
+    description:
+      "Get current time. If no timezone specified, returns all US timezones (CST, PST, MST, EST). For non-US timezones, specify the IANA timezone name.",
     parameters: [
       {
         name: "timezone",
         type: "string",
-        description: "IANA timezone name (e.g., 'America/New_York', 'Europe/London', 'Asia/Tokyo')",
+        description:
+          "Optional IANA timezone name (e.g., 'Europe/London', 'Asia/Tokyo'). Omit for US timezones.",
         required: false,
       },
     ],
@@ -189,13 +175,13 @@ export const AGENT_TOOLS: Tool[] = [
   {
     name: "generate_image",
     description:
-      "Generate an image from a text description using AI. Use this when the user asks for image creation, artwork, or visual content.",
+      "Generate an image from a text description using AI. Use this when the user asks for image creation, artwork, or visual content. Pass the user's request as-is - the system will optimize the prompt automatically.",
     parameters: [
       {
         name: "prompt",
         type: "string",
         description:
-          "Detailed description of the image to generate. Be specific about style, subject, colors, and composition.",
+          "The user's image request. Pass their description directly - do NOT expand or elaborate on it. Keep it under 300 characters.",
         required: true,
       },
       {
@@ -254,58 +240,77 @@ export const AGENT_TOOLS: Tool[] = [
       },
     ],
   },
-];
-
-/**
- * Convert our tool format to Ollama native format
- */
-function convertToOllamaTool(tool: Tool): OllamaTool {
-  const required: string[] = [];
-  const properties: Record<string, { type: string; description: string; enum?: string[] }> = {};
-
-  for (const param of tool.parameters) {
-    properties[param.name] = {
-      type: param.type,
-      description: param.description,
-      ...(param.enum ? { enum: param.enum } : {}),
-    };
-    if (param.required) {
-      required.push(param.name);
-    }
-  }
-
-  return {
-    type: "function",
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: {
-        type: "object",
-        required,
-        properties,
+  // ========================================
+  // Memory Self-Editing Tools (MemGPT Pattern)
+  // These tools allow the AI to directly modify its memory
+  // ========================================
+  {
+    name: "memory_append",
+    description:
+      "Store new information about the user for future conversations. Use this when learning something important that should be remembered long-term, like preferences, facts, or how they want to be responded to.",
+    parameters: [
+      {
+        name: "content",
+        type: "string",
+        description: "The information to remember about the user (be specific and detailed)",
+        required: true,
       },
-    },
-  };
-}
-
-/**
- * Get tools in Ollama native format for API calls
- */
-export function getOllamaTools(): OllamaTool[] {
-  return AGENT_TOOLS.map(convertToOllamaTool);
-}
-
-/**
- * Get specific tools in Ollama format by name
- */
-export function getOllamaToolsByName(names: string[]): OllamaTool[] {
-  return AGENT_TOOLS.filter((t) => names.includes(t.name)).map(convertToOllamaTool);
-}
+      {
+        name: "category",
+        type: "string",
+        description:
+          "Category: 'preference' (likes/dislikes), 'fact' (personal info), 'procedure' (how they want responses)",
+        required: false,
+        enum: ["preference", "fact", "procedure"],
+      },
+    ],
+  },
+  {
+    name: "memory_replace",
+    description:
+      "Update or correct existing memory. Use when the user provides new information that supersedes something you previously remembered, like a job change or name correction.",
+    parameters: [
+      {
+        name: "search_query",
+        type: "string",
+        description: "Query to find the memory to update (e.g., 'user job' or 'user location')",
+        required: true,
+      },
+      {
+        name: "new_content",
+        type: "string",
+        description: "The corrected/updated information to replace with",
+        required: true,
+      },
+      {
+        name: "reason",
+        type: "string",
+        description: "Why this memory is being updated",
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "graph_query",
+    description:
+      "Query the knowledge graph for relationships between entities the user mentioned. Use for questions like 'Who does X work with?' or 'What projects is Y involved in?' or to recall complex relationships.",
+    parameters: [
+      {
+        name: "question",
+        type: "string",
+        description:
+          "Natural language question about relationships (e.g., 'Who is Sarah's manager?')",
+        required: true,
+      },
+    ],
+  },
+];
 
 /**
  * Format tools for LLM prompt
  */
 export function formatToolsForPrompt(): string {
+  const availableTools = getAvailableTools();
   let output = "# Available Tools\n\n";
   output += "You can call tools by responding with a JSON block in this format:\n";
   output += "```json\n";
@@ -313,7 +318,7 @@ export function formatToolsForPrompt(): string {
   output += "```\n\n";
   output += "## Tools:\n\n";
 
-  for (const tool of AGENT_TOOLS) {
+  for (const tool of availableTools) {
     output += `### ${tool.name}\n`;
     output += `${tool.description}\n\n`;
     output += "Parameters:\n";

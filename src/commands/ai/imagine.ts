@@ -9,11 +9,27 @@ import {
   type CommandInteraction,
   EmbedBuilder,
 } from "discord.js";
-import { Discord, Slash, SlashOption, SlashChoice } from "discordx";
-import { getImageService } from "../../ai/image-service.js";
-import { getRateLimiter, buildRateLimitFooter } from "../../utils/rate-limiter.js";
-import { validatePrompt, sanitizeInput } from "../../utils/security.js";
+import { Discord, Slash, SlashChoice, SlashOption } from "discordx";
+import { getImageService, isImageGenerationEnabled } from "../../ai/image-service.js";
 import config from "../../config.js";
+import { createLogger } from "../../utils/logger.js";
+import { buildRateLimitFooter, getRateLimiter } from "../../utils/rate-limiter.js";
+import { sanitizeInput, validatePrompt } from "../../utils/security.js";
+
+const log = createLogger("ImagineCommand");
+
+/** Rate limit result type from rate limiter */
+type RateLimitCheckResult = ReturnType<ReturnType<typeof getRateLimiter>["checkRateLimit"]>;
+
+/**
+ * Pre-command validation result
+ */
+interface ValidationResult {
+  valid: boolean;
+  errorMessage?: string;
+  sanitizedPrompt?: ReturnType<typeof sanitizeInput>;
+  rateLimitResult?: RateLimitCheckResult;
+}
 
 @Discord()
 export class ImagineCommand {
@@ -23,6 +39,107 @@ export class ImagineCommand {
 
   private get rateLimiter() {
     return getRateLimiter();
+  }
+
+  /**
+   * Validate imagine command inputs before processing
+   */
+  private validateImagineRequest(
+    prompt: string,
+    userId: string,
+    channelId: string,
+    isDM: boolean
+  ): ValidationResult {
+    // Check rate limit
+    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
+    if (!rateLimitResult.allowed) {
+      return {
+        valid: false,
+        errorMessage: rateLimitResult.message ?? "Rate limited. Please wait.",
+        rateLimitResult,
+      };
+    }
+
+    // Validate prompt for security
+    const validation = validatePrompt(prompt);
+    if (validation.blocked) {
+      return {
+        valid: false,
+        errorMessage: `❌ ${validation.reason ?? "Invalid prompt"}`,
+        rateLimitResult,
+      };
+    }
+
+    // Sanitize prompt (remove PII)
+    const sanitizedPrompt = sanitizeInput(prompt);
+    if (sanitizedPrompt.modified) {
+      log.info(`Sanitized PII from user ${userId}: ${sanitizedPrompt.piiFound.join(", ")}`);
+    }
+
+    return { valid: true, sanitizedPrompt, rateLimitResult };
+  }
+
+  /**
+   * Check if service is available and queue is open
+   */
+  private async checkServiceAvailability(): Promise<{
+    available: boolean;
+    embed?: EmbedBuilder;
+  }> {
+    // Check health
+    const isAvailable = await this.imageService.healthCheck();
+    if (!isAvailable) {
+      return {
+        available: false,
+        embed: new EmbedBuilder()
+          .setColor(config.colors.error)
+          .setTitle("❌ Image Generation Unavailable")
+          .setDescription(
+            "The image generation service is currently offline. Please try again later."
+          )
+          .setTimestamp(),
+      };
+    }
+
+    // Check queue
+    const canAccept = await this.imageService.canAcceptJob();
+    if (!canAccept.allowed) {
+      return {
+        available: false,
+        embed: new EmbedBuilder()
+          .setColor(config.colors.warning)
+          .setTitle("⏳ Queue Full")
+          .setDescription(
+            canAccept.reason ?? "The image queue is full. Please wait a moment and try again."
+          )
+          .setTimestamp(),
+      };
+    }
+
+    return { available: true };
+  }
+
+  /**
+   * Build progress embed
+   */
+  private buildProgressEmbed(
+    prompt: string,
+    dimensions: { width: number; height: number }
+  ): EmbedBuilder {
+    return new EmbedBuilder()
+      .setColor(config.colors.info)
+      .setTitle("🎨 Generating Image...")
+      .setDescription(`**Prompt:** ${prompt.slice(0, 200)}${prompt.length > 200 ? "..." : ""}`)
+      .addFields(
+        {
+          name: "Size",
+          value: `${dimensions.width}x${dimensions.height}`,
+          inline: true,
+        },
+        { name: "Model", value: "Z-Image-Turbo", inline: true }
+      )
+      .setFooter({ text: "This may take 10-30 seconds..." })
+      .setTimestamp();
   }
 
   @Slash({
@@ -50,69 +167,45 @@ export class ImagineCommand {
     size: "square" | "portrait" | "landscape" | "wide" | undefined,
     interaction: CommandInteraction
   ): Promise<void> {
+    // Check if image generation is enabled
+    if (!isImageGenerationEnabled()) {
+      await interaction.reply({
+        content: "❌ Image generation is currently disabled.",
+        ephemeral: true,
+      });
+      return;
+    }
+
     const isDM = !interaction.guild;
     const channelId = interaction.channelId;
     const userId = interaction.user.id;
 
-    // Check rate limit
-    const rateLimitResult = this.rateLimiter.checkRateLimit(userId, channelId, isDM);
-    if (!rateLimitResult.allowed) {
+    // Validate request
+    const validationResult = this.validateImagineRequest(prompt, userId, channelId, isDM);
+    if (
+      !validationResult.valid ||
+      !validationResult.sanitizedPrompt ||
+      !validationResult.rateLimitResult
+    ) {
       await interaction.reply({
-        content: rateLimitResult.message ?? "Rate limited. Please wait.",
+        content: validationResult.errorMessage ?? "Validation failed",
         ephemeral: true,
       });
       return;
     }
 
-    // Validate prompt for security
-    const validation = validatePrompt(prompt);
-    if (validation.blocked) {
-      await interaction.reply({
-        content: `❌ ${validation.reason ?? "Invalid prompt"}`,
-        ephemeral: true,
-      });
-      return;
-    }
-
-    // Sanitize prompt (remove PII)
-    const sanitized = sanitizeInput(prompt);
-    if (sanitized.modified) {
-      // Log but don't tell user what was sanitized
-      console.log(`[Imagine] Sanitized PII from user ${userId}: ${sanitized.piiFound.join(", ")}`);
-    }
+    const sanitized = validationResult.sanitizedPrompt;
+    const rateLimitResult = validationResult.rateLimitResult;
 
     await interaction.deferReply();
 
     // Record the request
     this.rateLimiter.recordRequest(userId, channelId, isDM);
 
-    // Check if service is available
-    const isAvailable = await this.imageService.healthCheck();
-    if (!isAvailable) {
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.error)
-        .setTitle("❌ Image Generation Unavailable")
-        .setDescription(
-          "The image generation service is currently offline. Please try again later."
-        )
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
-      return;
-    }
-
-    // Check queue status
-    const canAccept = await this.imageService.canAcceptJob();
-    if (!canAccept.allowed) {
-      const embed = new EmbedBuilder()
-        .setColor(config.colors.warning)
-        .setTitle("⏳ Queue Full")
-        .setDescription(
-          canAccept.reason ?? "The image queue is full. Please wait a moment and try again."
-        )
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed] });
+    // Check availability
+    const serviceCHeck = await this.checkServiceAvailability();
+    if (!serviceCHeck.available && serviceCHeck.embed) {
+      await interaction.editReply({ embeds: [serviceCHeck.embed] });
       return;
     }
 
@@ -120,23 +213,7 @@ export class ImagineCommand {
     const dimensions = this.getDimensions(size ?? "square");
 
     // Show generation in progress
-    const progressEmbed = new EmbedBuilder()
-      .setColor(config.colors.info)
-      .setTitle("🎨 Generating Image...")
-      .setDescription(
-        `**Prompt:** ${sanitized.text.slice(0, 200)}${sanitized.text.length > 200 ? "..." : ""}`
-      )
-      .addFields(
-        {
-          name: "Size",
-          value: `${dimensions.width}x${dimensions.height}`,
-          inline: true,
-        },
-        { name: "Model", value: "Z-Image-Turbo", inline: true }
-      )
-      .setFooter({ text: "This may take 10-30 seconds..." })
-      .setTimestamp();
-
+    const progressEmbed = this.buildProgressEmbed(sanitized.text, dimensions);
     await interaction.editReply({ embeds: [progressEmbed] });
 
     try {
@@ -214,6 +291,15 @@ export class ImagineCommand {
     description: "Check the status of the image generation service",
   })
   async imagineStatus(interaction: CommandInteraction): Promise<void> {
+    // Check if image generation is enabled
+    if (!isImageGenerationEnabled()) {
+      await interaction.reply({
+        content: "❌ Image generation is currently disabled.",
+        ephemeral: true,
+      });
+      return;
+    }
+
     await interaction.deferReply({ ephemeral: true });
 
     const isAvailable = await this.imageService.healthCheck();
@@ -278,7 +364,6 @@ export class ImagineCommand {
         return { width: 1152, height: 768 };
       case "wide":
         return { width: 1344, height: 768 };
-      case "square":
       default:
         return { width: 1024, height: 1024 };
     }

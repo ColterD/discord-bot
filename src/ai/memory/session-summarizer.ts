@@ -6,7 +6,7 @@
 import axios from "axios";
 import { config } from "../../config.js";
 import { createLogger } from "../../utils/logger.js";
-import { conversationStore, type ConversationMessage } from "./conversation-store.js";
+import { type ConversationMessage, conversationStore } from "./conversation-store.js";
 
 const log = createLogger("SessionSummarizer");
 
@@ -171,7 +171,7 @@ Summary:`;
       });
     } catch (error) {
       log.error(
-        "Error checking summarization: " + (error instanceof Error ? error.message : String(error)),
+        `Error checking summarization: ${error instanceof Error ? error.message : String(error)}`,
         error
       );
     }

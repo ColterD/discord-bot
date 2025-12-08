@@ -25,7 +25,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 # Production stage - distroless for minimal attack surface
 # Uses nonroot user (UID 65532) by default
 # Pin to specific SHA for supply chain security
-FROM gcr.io/distroless/nodejs24-debian12:nonroot@sha256:f9d553b602abd9cd8790ffd1259229dd9915bd293402e88339e335465fec76ac
+FROM gcr.io/distroless/nodejs24-debian12:nonroot@sha256:b5bad30c810389860685e58663b073b89e547ca8d0805cbd881abbacaab6dcfe
 
 WORKDIR /app
 

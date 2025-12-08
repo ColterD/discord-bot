@@ -41,6 +41,7 @@ dist/
 # Cursor / AI agents
 .agents/
 .cursor/
+.claude/
 
 # -----------------------------------------------------------------------------
 # OS Files
@@ -69,6 +70,7 @@ lerna-debug.log*
 # Coverage & Testing
 # -----------------------------------------------------------------------------
 coverage/
+reports/
 .nyc_output/
 *.lcov
 junit.xml
@@ -111,9 +113,23 @@ eslint-output.json
 # -----------------------------------------------------------------------------
 mcp-servers.json
 
-# Snyk Security Extension - AI Rules (auto-generated)
-.cursor/rules/snyk_rules.mdc
+# -----------------------------------------------------------------------------
+# Personal/Local Development (not for GitHub)
+# -----------------------------------------------------------------------------
+# Local dashboard
+dashboard/
 
-# Agent workspace files
-.agents/
-eslint-output.json
+# Control scripts with personal paths
+scripts/bot-control.ps1
+
+# Roadmap is personal tracking
+ROADMAP.md
+
+# Generated test images
+tests/*.png
+
+# Reference Python script (temporary)
+docs/z-image-pe.py
+
+# Manual output files
+*_output.txt

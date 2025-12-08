@@ -1,0 +1,11 @@
+# Markdownlint Ignore File
+# These files contain example syntax and documentation references
+# that should not be validated as actual links
+
+# Copilot instruction files (contain #tool: references)
+.github/copilot-instructions.md
+.github/instructions/**/*.md
+.github/agent/**/*.md
+
+# Documentation that may have intentional incomplete examples
+docs/**/*.md

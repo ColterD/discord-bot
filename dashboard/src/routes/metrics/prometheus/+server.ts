@@ -63,8 +63,10 @@ function addContainerResourceMetrics(metrics: string[], container: ContainerInfo
     metrics.push(metric('container_cpu_percent', container.cpu, labels));
   }
   if (container.memory) {
-    metrics.push(metric('container_memory_bytes', container.memory.used, labels));
-    metrics.push(metric('container_memory_percent', container.memory.percent, labels));
+    metrics.push(
+      metric('container_memory_bytes', container.memory.used, labels),
+      metric('container_memory_percent', container.memory.percent, labels)
+    );
   }
 }
 
@@ -80,8 +82,10 @@ async function collectContainerMetrics(metrics: string[]): Promise<void> {
     stateCounts[container.state] = (stateCounts[container.state] ?? 0) + 1;
   }
 
-  metrics.push(`# HELP container_count Number of containers by state`);
-  metrics.push(`# TYPE container_count gauge`);
+  metrics.push(
+    `# HELP container_count Number of containers by state`,
+    `# TYPE container_count gauge`
+  );
   for (const [state, count] of Object.entries(stateCounts)) {
     metrics.push(metric('container_count', count, { state }));
   }
@@ -89,14 +93,16 @@ async function collectContainerMetrics(metrics: string[]): Promise<void> {
   metrics.push(metric('container_total', containers.length, undefined, 'Total number of monitored containers', 'gauge'));
 
   // Per-container metric headers
-  metrics.push(`# HELP container_cpu_percent Container CPU usage percentage`);
-  metrics.push(`# TYPE container_cpu_percent gauge`);
-  metrics.push(`# HELP container_memory_bytes Container memory usage in bytes`);
-  metrics.push(`# TYPE container_memory_bytes gauge`);
-  metrics.push(`# HELP container_memory_percent Container memory usage percentage`);
-  metrics.push(`# TYPE container_memory_percent gauge`);
-  metrics.push(`# HELP container_running Container running state (1=running, 0=stopped)`);
-  metrics.push(`# TYPE container_running gauge`);
+  metrics.push(
+    `# HELP container_cpu_percent Container CPU usage percentage`,
+    `# TYPE container_cpu_percent gauge`,
+    `# HELP container_memory_bytes Container memory usage in bytes`,
+    `# TYPE container_memory_bytes gauge`,
+    `# HELP container_memory_percent Container memory usage percentage`,
+    `# TYPE container_memory_percent gauge`,
+    `# HELP container_running Container running state (1=running, 0=stopped)`,
+    `# TYPE container_running gauge`
+  );
 
   for (const container of containers) {
     addContainerResourceMetrics(metrics, container);

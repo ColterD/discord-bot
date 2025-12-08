@@ -20,8 +20,8 @@ import type {
  */
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
-  // Replace newlines, carriage returns, and control characters
-  return str.replace(/[\r\n\x00-\x1F\x7F]/g, '');
+  // Remove all C0 control characters (includes newlines, tabs, etc.) and DEL
+  return str.replaceAll(/[\u0000-\u001F\u007F]/g, '');
 }
 
 /** WebSocket connection state */

@@ -128,9 +128,7 @@ function getOAuthConfig() {
 	const clientSecret = process.env.DISCORD_CLIENT_SECRET;
 	const redirectUri = process.env.DASHBOARD_URL
 		? `${process.env.DASHBOARD_URL}/auth/callback`
-		: dev
-			? 'http://localhost:3000/auth/callback'
-			: 'http://localhost:3000/auth/callback';
+		: 'http://localhost:3000/auth/callback';
 
 	if (!clientId || !clientSecret) {
 		throw new Error('Missing DISCORD_CLIENT_ID or DISCORD_CLIENT_SECRET environment variables');

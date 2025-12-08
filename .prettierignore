@@ -27,3 +27,10 @@ logs/
 
 # MCP configuration (JSON should be preserved as-is)
 mcp-servers.json
+
+# Test artifacts
+tests/*.png
+tests/*.json
+
+# Local development
+dashboard/

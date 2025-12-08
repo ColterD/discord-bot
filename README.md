@@ -88,10 +88,16 @@ src/
 ├── components/           # Discord UI components
 ├── events/               # Discord event handlers
 ├── guards/               # Permission guards
+├── guards/               # Permission guards
 └── utils/
     ├── cache.ts          # Valkey client with fallback
     ├── security.ts       # Security utilities
     └── ...
+tests/
+├── unit/                 # Fast individual component tests
+├── integration/          # Feature usage tests (DB, Cloudflare)
+├── docker/               # Container infra tests
+└── manual/               # Ad-hoc scripts
 ```
 
 ## Prerequisites
@@ -322,27 +328,29 @@ The bot uses environment variables and `src/config.ts` for configuration.
 ### Key Configuration Options
 
 ```typescript
+const _env = envSchema.parse(process.env);
+
 export const config = {
   bot: {
-    name: process.env.BOT_NAME ?? "Discord Bot",
+    name: _env.BOT_NAME,
   },
   discord: {
-    token: process.env.DISCORD_TOKEN ?? "",
-    clientId: process.env.DISCORD_CLIENT_ID ?? "",
-    devGuildId: process.env.DEV_GUILD_ID ?? "",
+    token: _env.DISCORD_TOKEN,
+    clientId: _env.DISCORD_CLIENT_ID,
+    devGuildId: _env.DEV_GUILD_ID,
   },
   llm: {
-    apiUrl: process.env.OLLAMA_HOST ?? "http://ollama:11434",
-    model: process.env.LLM_MODEL ?? "...",
-    fallbackModel: process.env.LLM_FALLBACK_MODEL ?? "qwen2.5:7b",
-    useOrchestrator: process.env.LLM_USE_ORCHESTRATOR !== "false",
+    apiUrl: _env.OLLAMA_HOST,
+    model: _env.LLM_MODEL,
+    fallbackModel: _env.LLM_FALLBACK_MODEL,
+    useOrchestrator: _env.LLM_USE_ORCHESTRATOR === "true",
   },
   valkey: {
-    url: process.env.VALKEY_URL ?? "valkey://valkey:6379",
+    url: _env.VALKEY_URL,
     keyPrefix: "discord-bot:",
   },
   security: {
-    ownerIds: (process.env.BOT_OWNER_IDS ?? "").split(",").filter(Boolean),
+    ownerIds: _env.BOT_OWNER_IDS,
   },
 };
 ```
@@ -409,15 +417,22 @@ npm test
 
 ## Testing
 
+The project uses a **Master Test Runner** for unified test execution.
+
 ```bash
-# Run integration tests
-npm run test:integration
+# Run interactive test menu
+npm run test:master
 
-# Run security tests
-npm run test:security
+# Run all tests (Unit + Docker + Integration)
+npm run test:master -- --all
 
-# Run all tests
-npm run test:all
+# Run specific suites
+npm run test:master -- --unit
+npm run test:master -- --integration
+npm run test:master -- --docker
+
+# Run a specific integration script
+npm run test:master -- --script send-message
 ```
 
 ### Test Coverage
@@ -441,22 +456,18 @@ npm run test:all
 
 ## Scripts
 
-| Script                     | Description                       |
-| -------------------------- | --------------------------------- |
-| `npm run dev`              | Start with hot reload (tsx watch) |
-| `npm run build`            | Compile TypeScript                |
-| `npm start`                | Run compiled JS                   |
-| `npm run deploy`           | Deploy slash commands             |
-| `npm run typecheck`        | Type check without emit           |
-| `npm test`                 | Run integration tests             |
-| `npm run test:integration` | Run integration tests             |
-| `npm run test:security`    | Run security tests                |
-| `npm run test:all`         | Run all tests                     |
-| `npm run test:send`        | Send test message via webhook     |
-| `npm run lint`             | Run ESLint                        |
-| `npm run lint:fix`         | Fix linting issues                |
-| `npm run format`           | Format code with Prettier         |
-| `npm run clean`            | Delete dist folder                |
+| Script                | Description                       |
+| --------------------- | --------------------------------- |
+| `npm run dev`         | Start with hot reload (tsx watch) |
+| `npm run build`       | Compile TypeScript                |
+| `npm start`           | Run compiled JS                   |
+| `npm run deploy`      | Deploy slash commands             |
+| `npm run typecheck`   | Type check without emit           |
+| `npm run test:master` | **Run Master Test Runner**        |
+| `npm run lint`        | Run ESLint                        |
+| `npm run lint:fix`    | Fix linting issues                |
+| `npm run format`      | Format code with Prettier         |
+| `npm run clean`       | Delete dist folder                |
 
 ## Troubleshooting
 

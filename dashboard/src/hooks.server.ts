@@ -38,8 +38,8 @@ export const handleError: HandleServerError = async ({ error, event, status, mes
 /** Public routes that don't require authentication */
 const PUBLIC_ROUTES = ['/login', '/auth/discord', '/auth/callback', '/auth/logout'];
 
-/** Public API routes (health checks, etc.) */
-const PUBLIC_API_ROUTES = ['/api/cloudflare/health'];
+/** Public API routes (health checks, Prometheus metrics) */
+const PUBLIC_API_ROUTES = ['/api/cloudflare/health', '/metrics/prometheus'];
 
 /** API routes prefix */
 const API_PREFIX = '/api/';

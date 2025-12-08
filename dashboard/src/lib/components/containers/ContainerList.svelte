@@ -35,8 +35,6 @@
   const runningCount = $derived(safeContainers.filter(c => c.state === 'running').length);
   const stoppedCount = $derived(safeContainers.filter(c => c.state !== 'running').length);
 
-  // Silence unused var warnings - these are used in template
-  void onviewLogs;
 </script>
 
 <div class="container-list">

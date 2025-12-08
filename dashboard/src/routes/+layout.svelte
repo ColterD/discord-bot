@@ -1,6 +1,9 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/state';
+  import Header from '$lib/components/layout/Header.svelte';
+  import Sidebar from '$lib/components/layout/Sidebar.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
 
   const { children, data } = $props();
 
@@ -11,12 +14,12 @@
     { icon: '⚙️', label: 'Settings', href: '/settings' }
   ];
 
-  const _itemsWithActive = $derived(navItems.map(item => ({
+  const itemsWithActive = $derived(navItems.map(item => ({
     ...item,
     active: page.url.pathname === item.href
   })));
 
-  const _sidebarCollapsed = $state(false);
+  let sidebarCollapsed = $state(false);
 </script>
 
 <div class="app">

@@ -102,9 +102,6 @@
   const sparklinePath = $derived(getSparklinePath(vramHistory));
   const currentUsage = $derived(gpuInfo?.gpu?.usagePercent ?? 0);
 
-  // Silence unused var warnings - these are used in template
-  void sparklinePath;
-  void currentUsage;
 </script>
 
 <svelte:head>

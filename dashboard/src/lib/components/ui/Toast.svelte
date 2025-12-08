@@ -1,5 +1,5 @@
 <script lang="ts">
-
+  import { fly } from 'svelte/transition';
 
   type Type = 'success' | 'error' | 'warning' | 'info';
 
@@ -12,7 +12,7 @@
 
   const { type = 'info', message, duration = 5000, onclose }: Props = $props();
 
-  const _icons = {
+  const icons = {
     success: '✓',
     error: '✕',
     warning: '⚠',

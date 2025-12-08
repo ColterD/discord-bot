@@ -55,8 +55,6 @@
     return 'var(--success)';
   }
 
-  // Silence unused import warnings - these are used in template
-  void onclick;
 </script>
 
 <Card padding="md" hover>

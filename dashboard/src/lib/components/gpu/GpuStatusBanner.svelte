@@ -1,5 +1,6 @@
 <script lang="ts">
-
+  import Card from '$lib/components/ui/Card.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
   import type { OllamaRunningModel } from '$lib/server/gpu';
   import type { GpuStatus } from '$lib/types';
 
@@ -11,8 +12,8 @@
   }
 
   let gpuInfo = $state<GpuInfo | null>(null);
-  let _loading = $state(true);
-  let _error = $state<string | null>(null);
+  let loading = $state(true);
+  let error = $state<string | null>(null);
 
   async function fetchGpuInfo() {
     try {
@@ -21,11 +22,11 @@
         throw new Error('Failed to fetch GPU info');
       }
       gpuInfo = await response.json();
-      _error = null;
+      error = null;
     } catch (e) {
-      _error = e instanceof Error ? e.message : 'Unknown error';
+      error = e instanceof Error ? e.message : 'Unknown error';
     } finally {
-      _loading = false;
+      loading = false;
     }
   }
 
@@ -36,7 +37,7 @@
     return () => clearInterval(interval);
   });
 
-  function _formatBytes(bytes: number): string {
+  function formatBytes(bytes: number): string {
     const mb = bytes;
     if (mb >= 1024) {
       return `${(mb / 1024).toFixed(1)} GB`;
@@ -44,20 +45,21 @@
     return `${mb.toFixed(0)} MB`;
   }
 
-  function _getUsageColor(percent: number): 'danger' | 'warning' | 'success' {
+  function getUsageColor(percent: number): 'danger' | 'warning' | 'success' {
     if (percent >= 90) return 'danger';
     if (percent >= 70) return 'warning';
     return 'success';
   }
 
-  function _getUsageGradient(percent: number): string {
+  function getUsageGradient(percent: number): string {
     if (percent >= 90) return 'var(--gradient-danger)';
     if (percent >= 70) return 'var(--gradient-warning)';
     return 'var(--gradient-success)';
   }
 
-  const _primaryModel = $derived(gpuInfo?.loadedModels[0] ?? null);
-  const _modelCount = $derived(gpuInfo?.loadedModels.length ?? 0);
+  const primaryModel = $derived(gpuInfo?.loadedModels[0] ?? null);
+  const modelCount = $derived(gpuInfo?.loadedModels.length ?? 0);
+
 </script>
 
 <Card variant="glass" padding="md">

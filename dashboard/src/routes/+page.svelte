@@ -5,10 +5,14 @@
   import {
     connect,
     connectionState,
-    disconnect, 
+    disconnect,
     wsContainers
   } from '$lib/stores/websocket';
   import type { ContainerInfo } from '$lib/types';
+  import GpuStatusBanner from '$lib/components/gpu/GpuStatusBanner.svelte';
+  import CloudflareStatus from '$lib/components/status/CloudflareStatus.svelte';
+  import ContainerList from '$lib/components/containers/ContainerList.svelte';
+  import LogViewer from '$lib/components/containers/LogViewer.svelte';
 
   // SSR data from +page.server.ts - provides instant initial render
   const { data } = $props();
@@ -59,12 +63,6 @@
   const stoppedCount = $derived(totalCount - runningCount);
   const healthStatus = $derived(runningCount === totalCount ? 'healthy' : runningCount > 0 ? 'degraded' : 'critical');
 
-  // Silence unused var warnings - these are used in template
-  void wsConnectionState;
-  void logsVisible;
-  void selectedContainer;
-  void handleViewLogs;
-  void stoppedCount;
 </script>
 
 <svelte:head>

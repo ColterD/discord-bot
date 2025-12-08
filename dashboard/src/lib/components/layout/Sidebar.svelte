@@ -11,7 +11,7 @@
     collapsed?: boolean;
   }
 
-  const { items = [], collapsed = $bindable(false) }: Props = $props();
+  let { items = [], collapsed = $bindable(false) }: Props = $props();
 </script>
 
 <aside class="sidebar" class:collapsed>

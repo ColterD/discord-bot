@@ -16,7 +16,7 @@
 
   const { botName = 'Discord Bot', user = null, nav, actions }: Props = $props();
 
-  function _getAvatarUrl(user: User): string {
+  function getAvatarUrl(user: User): string {
     if (user.avatar) {
       return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=40`;
     }

@@ -1,5 +1,6 @@
 <script lang="ts">
-
+  import Card from '$lib/components/ui/Card.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
 
   interface CloudflareHealth {
     available: boolean;
@@ -23,7 +24,7 @@
     lastCheck: null
   });
   let loading = $state(true);
-  let _error = $state<string | null>(null);
+  let error = $state<string | null>(null);
 
   async function checkHealth() {
     try {
@@ -36,9 +37,9 @@
         ...data,
         lastCheck: new Date().toISOString()
       };
-      _error = null;
+      error = null;
     } catch (e) {
-      _error = e instanceof Error ? e.message : 'Unknown error';
+      error = e instanceof Error ? e.message : 'Unknown error';
       health = { ...health, available: false };
     } finally {
       loading = false;
@@ -54,12 +55,12 @@
 
   type BadgeVariant = 'default' | 'success' | 'warning' | 'danger' | 'info';
 
-  const _statusVariant = $derived<BadgeVariant>(
+  const statusVariant = $derived<BadgeVariant>(
     loading ? 'default' : health.available ? 'success' : 'danger'
   );
 
   // Latency thresholds depend on whether using Worker (edge) or REST API
-  const _latencyColor = $derived.by(() => {
+  const latencyColor = $derived.by(() => {
     const ms = health.latencyMs;
     if (!ms) return 'var(--text-muted)';
     if (health.usingWorker) {
@@ -74,6 +75,7 @@
       return 'var(--danger)';
     }
   });
+
 </script>
 
 <Card variant="glass" padding="md">

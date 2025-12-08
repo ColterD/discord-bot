@@ -74,8 +74,8 @@ async function initValkey(): Promise<void> {
 
 		await valkeyClient.connect();
 		valkeyConnected = true;
-	} catch (_error) {
-		console.warn('[Auth] Valkey unavailable, using in-memory fallback');
+	} catch (error) {
+		console.warn('[Auth] Valkey unavailable, using in-memory fallback:', error);
 		valkeyClient = null;
 	}
 }

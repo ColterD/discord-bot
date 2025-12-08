@@ -23,8 +23,8 @@ function sanitizeForLog(value: unknown): string {
   // Remove C0 control characters (0x00-0x1F) and DEL (0x7F) to prevent log injection
   return Array.from(str)
     .filter(char => {
-      const code = char.charCodeAt(0);
-      return code >= 0x20 && code !== 0x7F;
+      const code = char.codePointAt(0);
+      return code !== undefined && code >= 0x20 && code !== 0x7F;
     })
     .join('');
 }
@@ -111,12 +111,12 @@ function updateStats(containers: ContainerInfo[]): void {
 
 /** Track previous state for change detection - use sessionStorage to survive HMR */
 function getPrevState(key: string): string | null {
-  if (typeof window === 'undefined') return null;
+  if (typeof globalThis === 'undefined') return null;
   return sessionStorage.getItem(`ws_fingerprint_${key}`);
 }
 
 function setPrevState(key: string, value: string): void {
-  if (typeof window === 'undefined') return;
+  if (typeof globalThis === 'undefined') return;
   sessionStorage.setItem(`ws_fingerprint_${key}`, value);
 }
 
@@ -209,8 +209,8 @@ export function connect(): void {
   }
 
   // Determine WebSocket URL based on current location
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${window.location.host}/ws`;
+  const protocol = globalThis.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${protocol}//${globalThis.location.host}/ws`;
 
   connectionState.set('connecting');
   wsError.set(null);

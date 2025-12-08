@@ -90,10 +90,9 @@ async function collectContainerMetrics(metrics: string[]): Promise<void> {
     metrics.push(metric('container_count', count, { state }));
   }
 
-  metrics.push(metric('container_total', containers.length, undefined, 'Total number of monitored containers', 'gauge'));
-
   // Per-container metric headers
   metrics.push(
+    metric('container_total', containers.length, undefined, 'Total number of monitored containers', 'gauge'),
     `# HELP container_cpu_percent Container CPU usage percentage`,
     `# TYPE container_cpu_percent gauge`,
     `# HELP container_memory_bytes Container memory usage in bytes`,

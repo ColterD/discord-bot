@@ -232,6 +232,20 @@ export interface LogEntry {
 }
 
 /**
+ * Create a log entry from parsed payload
+ */
+function createLogEntry(payload: string, streamType: number): LogEntry {
+  const stream: 'stdout' | 'stderr' = streamType === 2 ? 'stderr' : 'stdout';
+  // Parse timestamp and message (format: "2024-01-01T12:00:00.000000000Z message")
+  const timestampMatch = payload.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s*(.*)/s);
+
+  if (timestampMatch) {
+    return { timestamp: timestampMatch[1], message: timestampMatch[2], stream };
+  }
+  return { timestamp: new Date().toISOString(), message: payload, stream };
+}
+
+/**
  * Parse Docker multiplexed log buffer into structured entries
  * Docker logs have an 8-byte header: [stream, 0, 0, 0, size1, size2, size3, size4]
  * - stream: 1=stdout, 2=stderr
@@ -255,23 +269,8 @@ function parseDockerLogs(buffer: Buffer): LogEntry[] {
     const payload = buffer.subarray(offset, offset + payloadSize).toString('utf-8').trim();
     offset += payloadSize;
 
-    if (!payload) continue;
-
-    // Parse timestamp and message (format: "2024-01-01T12:00:00.000000000Z message")
-    const timestampMatch = payload.match(/^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\s*(.*)/s);
-    if (timestampMatch) {
-      entries.push({
-        timestamp: timestampMatch[1],
-        message: timestampMatch[2],
-        stream: streamType === 2 ? 'stderr' : 'stdout'
-      });
-    } else {
-      // No timestamp, just use the payload as message
-      entries.push({
-        timestamp: new Date().toISOString(),
-        message: payload,
-        stream: streamType === 2 ? 'stderr' : 'stdout'
-      });
+    if (payload) {
+      entries.push(createLogEntry(payload, streamType));
     }
   }
 

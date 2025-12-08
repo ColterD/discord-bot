@@ -6,9 +6,9 @@
  */
 
 import { json } from '@sveltejs/kit';
+import { requireAuth } from '$lib/server/api-auth';
 import type { SettingsCategory } from '$lib/types';
 import type { RequestHandler } from './$types';
-import { requireAuth } from '$lib/server/api-auth';
 
 /**
  * Mask sensitive values for display

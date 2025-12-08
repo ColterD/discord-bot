@@ -6,10 +6,10 @@
  */
 
 import { json } from '@sveltejs/kit';
+import { requireAuth } from '$lib/server/api-auth';
 import { getStackContainers } from '$lib/server/docker';
 import type { ContainerMetrics, MetricDataPoint } from '$lib/types';
 import type { RequestHandler } from './$types';
-import { requireAuth } from '$lib/server/api-auth';
 
 interface MetricsStore {
   containers: Map<string, MetricDataPoint[]>;

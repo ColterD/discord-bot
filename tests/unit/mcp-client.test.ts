@@ -247,7 +247,9 @@ describe("MCP Client", () => {
       const configWithEnvVar = {
         mcpServers: {
           "test-server": {
+            // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing env var substitution
             command: "${TEST_MCP_VAR}",
+            // biome-ignore lint/suspicious/noTemplateCurlyInString: Testing env var substitution
             args: ["--key=${TEST_MCP_VAR}"],
           },
         },

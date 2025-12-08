@@ -3,7 +3,6 @@
  * Re-exports all service functionality
  */
 
-
 // Health Monitor Service - Self-healing infrastructure
 export {
   getHealthMonitor,

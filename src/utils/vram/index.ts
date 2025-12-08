@@ -7,7 +7,6 @@
  * @module utils/vram
  */
 
-
 // Re-export configuration
 export { VRAM_CONFIG } from "./config.js";
 // Re-export helpers for external use

@@ -6,7 +6,6 @@
  * - Prompt injection and impersonation detection
  */
 
-
 export {
   type DetectionResult,
   detectImpersonation,

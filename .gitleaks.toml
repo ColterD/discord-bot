@@ -57,3 +57,15 @@ regexes = [
     '''FAKE_TOKEN.*''',
     '''TEST_ONLY_NOT_REAL''',
 ]
+
+# Ignore dummy credentials in CI workflow files
+[[allowlists]]
+description = "Ignore dummy Discord credentials in CI workflows"
+paths = [
+    '''\.github/workflows/integration\.yml''',
+]
+regexTarget = "match"
+regexes = [
+    '''123456789012345678''',  # Dummy client ID for CI
+    '''test-token-for-ci''',   # Dummy token for CI
+]

@@ -11,10 +11,11 @@ import { envSchema } from "../../src/config";
 // For this test, we will draft what the test *should* look like for the refactored Code.
 
 describe("Configuration", () => {
+  // NOSONAR - Test data, not actual service URLs
   const validEnv = {
     DISCORD_TOKEN: "mock_token",
     DISCORD_CLIENT_ID: "mock_client_id",
-    OLLAMA_HOST: "http://ollama:11434",
+    OLLAMA_HOST: "http://ollama:11434", // NOSONAR - test data
     VALKEY_URL: "valkey://valkey:6379",
     // Add other required fields if strict
   };

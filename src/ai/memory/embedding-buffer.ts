@@ -12,6 +12,7 @@
  * @module ai/memory/embedding-buffer
  */
 
+import crypto from "node:crypto";
 import Valkey from "iovalkey";
 import { config } from "../../config.js";
 import { createLogger } from "../../utils/logger.js";
@@ -166,7 +167,7 @@ export class EmbeddingBuffer {
 
     const fullEntry: BufferEntry = {
       ...entry,
-      id: `emb_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      id: `emb_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`,
       timestamp: Date.now(),
       retryCount: 0,
     };

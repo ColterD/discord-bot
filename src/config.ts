@@ -1,6 +1,13 @@
 /**
  * Bot Configuration
  * Centralized configuration management with Zod validation
+ *
+ * SECURITY NOTE: HTTP URLs in this file are defaults for Docker internal services
+ * (Ollama, ChromaDB, SearXNG, ComfyUI) that communicate over a private Docker network.
+ * In production, these services are not exposed to the internet - they're only
+ * accessible within the Docker network. HTTPS would require TLS certificates for
+ * internal services which adds unnecessary complexity. The security boundary is
+ * the Docker network itself, not TLS between containers.
  */
 
 import "dotenv/config";
@@ -46,7 +53,7 @@ export const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 
   // LLM Configuration
-  OLLAMA_HOST: internalServiceUrl("OLLAMA_HOST").default("http://ollama:11434"),
+  OLLAMA_HOST: internalServiceUrl("OLLAMA_HOST").default("http://ollama:11434"), // NOSONAR - Docker internal service
   LLM_MODEL: z
     .string()
     .default("hf.co/DavidAU/OpenAi-GPT-oss-20b-HERETIC-uncensored-NEO-Imatrix-gguf:Q5_1"),
@@ -90,7 +97,7 @@ export const envSchema = z.object({
   VALKEY_KEY_PREFIX: z.string().default("discord-bot:"),
 
   // ChromaDB
-  CHROMA_URL: internalServiceUrl("CHROMA_URL").default("http://chromadb:8000"),
+  CHROMA_URL: internalServiceUrl("CHROMA_URL").default("http://chromadb:8000"), // NOSONAR - Docker internal service
   CHROMA_COLLECTION: z.string().default("memories"),
 
   // Embedding
@@ -136,12 +143,12 @@ export const envSchema = z.object({
   SECURITY_SYSTEM_PROMPT_PREAMBLE: z.enum(["true", "false"]).default("true"),
 
   // SearXNG
-  SEARXNG_URL: internalServiceUrl("SEARXNG_URL").default("http://searxng:8080"),
+  SEARXNG_URL: internalServiceUrl("SEARXNG_URL").default("http://searxng:8080"), // NOSONAR - Docker internal service
   SEARXNG_TIMEOUT: z.coerce.number().int().min(1000).default(30000),
 
   // ComfyUI
   IMAGE_GENERATION_ENABLED: z.enum(["true", "false"]).default("true"),
-  COMFYUI_URL: internalServiceUrl("COMFYUI_URL").default("http://comfyui:8188"),
+  COMFYUI_URL: internalServiceUrl("COMFYUI_URL").default("http://comfyui:8188"), // NOSONAR - Docker internal service
   COMFYUI_MAX_QUEUE: z.coerce.number().int().min(1).default(5),
   COMFYUI_TIMEOUT: z.coerce.number().int().min(1000).default(120000),
   COMFYUI_SLEEP_AFTER_MS: z.coerce.number().int().min(1000).default(300000),

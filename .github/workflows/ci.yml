@@ -57,6 +57,10 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:unit
+        env:
+          NODE_ENV: test
+          DISCORD_TOKEN: test-token-for-ci
+          DISCORD_CLIENT_ID: "123456789012345678"
 
   build:
     name: Build & Type Check

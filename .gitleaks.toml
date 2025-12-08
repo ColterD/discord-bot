@@ -17,11 +17,14 @@ paths = [
 ]
 
 # Specific fingerprints to ignore (from gitleaks output)
+# These are commits containing dummy/test credentials for CI
 commits = []
 stopwords = [
     "MTE2NTI4NDgzNjE3ODQyMjg4OA",
     "MTIzNDU2Nzg5MDEyMzQ1Njc4OTAx",
     "_test_token_not_real_do_not_use_",
+    "123456789012345678",  # Dummy Discord client ID for CI tests
+    "test-token-for-ci",   # Dummy Discord token for CI tests
 ]
 
 # Ignore placeholder tokens in documentation

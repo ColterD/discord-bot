@@ -8,6 +8,7 @@
 import { json } from '@sveltejs/kit';
 import type { SettingsCategory } from '$lib/types';
 import type { RequestHandler } from './$types';
+import { requireAuth } from '$lib/server/api-auth';
 
 /**
  * Mask sensitive values for display
@@ -301,7 +302,8 @@ function getSettingsCategories(): SettingsCategory[] {
   ];
 }
 
-export const GET: RequestHandler = async () => {
+export const GET: RequestHandler = async (event) => {
+  requireAuth(event);
   const categories = getSettingsCategories();
   return json({ categories });
 };

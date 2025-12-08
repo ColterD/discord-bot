@@ -26,6 +26,30 @@ const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/i;
 const HIDDEN_TOOL_REASON = "";
 
 /**
+ * Pre-computed permission Sets for O(1) lookup instead of O(n) array.includes()
+ * Lazily initialized on first use to avoid startup overhead
+ */
+let permissionSets: {
+  alwaysBlocked: Set<string>;
+  ownerOnly: Set<string>;
+  adminOnly: Set<string>;
+  moderatorOnly: Set<string>;
+} | null = null;
+
+function getPermissionSets() {
+  if (!permissionSets) {
+    const { tools } = config.security;
+    permissionSets = {
+      alwaysBlocked: new Set(tools.alwaysBlocked),
+      ownerOnly: new Set(tools.ownerOnly),
+      adminOnly: new Set(tools.adminOnly),
+      moderatorOnly: new Set(tools.moderatorOnly),
+    };
+  }
+  return permissionSets;
+}
+
+/**
  * Validate that a tool name is safe
  */
 function isValidToolName(toolName: string): boolean {
@@ -71,25 +95,25 @@ export function getToolPermission(toolName: string): ToolPermission {
     return ToolPermission.AlwaysBlocked;
   }
 
-  const { tools } = config.security;
+  const sets = getPermissionSets();
 
-  // Check always blocked first
-  if ((tools.alwaysBlocked as readonly string[]).includes(toolName)) {
+  // Check always blocked first (O(1) Set lookup)
+  if (sets.alwaysBlocked.has(toolName)) {
     return ToolPermission.AlwaysBlocked;
   }
 
   // Check owner-only
-  if ((tools.ownerOnly as readonly string[]).includes(toolName)) {
+  if (sets.ownerOnly.has(toolName)) {
     return ToolPermission.OwnerOnly;
   }
 
   // Check admin-only
-  if ((tools.adminOnly as readonly string[]).includes(toolName)) {
+  if (sets.adminOnly.has(toolName)) {
     return ToolPermission.AdminOnly;
   }
 
   // Check moderator-only
-  if ((tools.moderatorOnly as readonly string[]).includes(toolName)) {
+  if (sets.moderatorOnly.has(toolName)) {
     return ToolPermission.ModeratorOnly;
   }
 

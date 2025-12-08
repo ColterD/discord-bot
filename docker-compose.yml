@@ -118,7 +118,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      # ComfyUI with GPU and model loading needs extra startup time
+      start_period: 180s
 
   searxng:
     # Pinned version - check https://hub.docker.com/r/searxng/searxng for updates

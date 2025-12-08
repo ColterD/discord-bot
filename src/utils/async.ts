@@ -125,13 +125,17 @@ export async function withConcurrency<T>(tasks: (() => Promise<T>)[], limit: num
 
   for (const [index, task] of tasks.entries()) {
     // Create wrapped promise that removes itself when settled
+    // promiseRef is assigned immediately after the IIFE is created but before
+    // any async code runs, so it will always be defined in the finally block
+    let promiseRef!: Promise<void>;
     const promise = (async () => {
       try {
         results[index] = await task();
       } finally {
-        executing.delete(promise);
+        executing.delete(promiseRef);
       }
     })();
+    promiseRef = promise;
 
     executing.add(promise);
 

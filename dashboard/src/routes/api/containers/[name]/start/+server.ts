@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { startContainer } from '$lib/server/docker';
 import { requireAuth } from '$lib/server/api-auth';
+import { startContainer } from '$lib/server/docker';
+import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = async (event) => {
   requireAuth(event);

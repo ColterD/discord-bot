@@ -6,8 +6,8 @@
  */
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
 import type { SettingsCategory } from '$lib/types';
+import type { RequestHandler } from './$types';
 
 /**
  * Mask sensitive values for display

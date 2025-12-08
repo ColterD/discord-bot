@@ -1,4 +1,4 @@
-import { writable, derived } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 import type { ContainerInfo, DashboardStats } from '$lib/types';
 
 /** Store for container data */

@@ -1,6 +1,5 @@
 <script lang="ts">
   import type { Snippet } from 'svelte';
-  import Button from '../ui/Button.svelte';
 
   interface User {
     id: string;
@@ -15,13 +14,13 @@
     actions?: Snippet;
   }
 
-  let { botName = 'Discord Bot', user = null, nav, actions }: Props = $props();
+  const { botName = 'Discord Bot', user = null, nav, actions }: Props = $props();
 
-  function getAvatarUrl(user: User): string {
+  function _getAvatarUrl(user: User): string {
     if (user.avatar) {
       return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=40`;
     }
-    const defaultIndex = Number.parseInt(user.id) % 5;
+    const defaultIndex = Number.parseInt(user.id, 10) % 5;
     return `https://cdn.discordapp.com/embed/avatars/${defaultIndex}.png`;
   }
 </script>

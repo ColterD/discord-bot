@@ -6,9 +6,9 @@
  */
 
 import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import type { ContainerMetrics, MetricDataPoint } from '$lib/types';
 import { getStackContainers } from '$lib/server/docker';
+import type { ContainerMetrics, MetricDataPoint } from '$lib/types';
+import type { RequestHandler } from './$types';
 
 interface MetricsStore {
   containers: Map<string, MetricDataPoint[]>;

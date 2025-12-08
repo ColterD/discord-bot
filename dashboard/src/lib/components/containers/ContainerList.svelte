@@ -7,7 +7,7 @@
     onviewLogs?: (containerName: string) => void;
   }
 
-  let { containers, onviewLogs }: Props = $props();
+  const { containers, onviewLogs }: Props = $props();
 
   // Generate unique ID for form element accessibility
   const uid = $props.id();
@@ -16,9 +16,9 @@
   let searchQuery = $state('');
 
   // Ensure we have a valid array
-  let safeContainers = $derived(containers ?? []);
+  const safeContainers = $derived(containers ?? []);
 
-  let filteredContainers = $derived(safeContainers.filter(c => {
+  const filteredContainers = $derived(safeContainers.filter(c => {
     // Apply status filter
     if (filter === 'running' && c.state !== 'running') return false;
     if (filter === 'stopped' && c.state === 'running') return false;
@@ -32,8 +32,11 @@
     return true;
   }));
 
-  let runningCount = $derived(safeContainers.filter(c => c.state === 'running').length);
-  let stoppedCount = $derived(safeContainers.filter(c => c.state !== 'running').length);
+  const runningCount = $derived(safeContainers.filter(c => c.state === 'running').length);
+  const stoppedCount = $derived(safeContainers.filter(c => c.state !== 'running').length);
+
+  // Silence unused var warnings - these are used in template
+  void onviewLogs;
 </script>
 
 <div class="container-list">

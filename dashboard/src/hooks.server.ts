@@ -4,9 +4,9 @@
  * Handles authentication middleware and error handling for all routes
  */
 
-import { config } from 'dotenv';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config } from 'dotenv';
 
 // Load environment from parent directory (works regardless of cwd)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -48,12 +48,12 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const { pathname } = event.url;
 
 	// Allow public routes
-	if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+	if (PUBLIC_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
 		return resolve(event);
 	}
 
 	// Allow specific public API routes
-	if (PUBLIC_API_ROUTES.some((route) => pathname === route || pathname.startsWith(route + '/'))) {
+	if (PUBLIC_API_ROUTES.some((route) => pathname === route || pathname.startsWith(`${route}/`))) {
 		return resolve(event);
 	}
 

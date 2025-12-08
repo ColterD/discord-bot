@@ -4,9 +4,9 @@
  * Returns GPU/VRAM usage, loaded models, and service health
  */
 
-import { json, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import { error, json } from '@sveltejs/kit';
 import { getGpuInfo } from '$lib/server/gpu';
+import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async () => {
   try {

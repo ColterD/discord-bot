@@ -4,16 +4,16 @@
  * Handles the callback from Discord after user authorizes
  */
 
-import { redirect, error } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
+import { error, redirect } from '@sveltejs/kit';
 import {
+	createSession,
 	exchangeCode,
 	fetchUser,
+	getSessionCookieOptions, 
 	isAuthorized,
-	createSession,
-	SESSION_COOKIE,
-	getSessionCookieOptions
+	SESSION_COOKIE
 } from '$lib/server/auth';
+import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
 	const code = url.searchParams.get('code');

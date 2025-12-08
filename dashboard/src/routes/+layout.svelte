@@ -1,11 +1,8 @@
 <script lang="ts">
   import '../app.css';
-  import Header from '$lib/components/layout/Header.svelte';
-  import Sidebar from '$lib/components/layout/Sidebar.svelte';
-  import Button from '$lib/components/ui/Button.svelte';
   import { page } from '$app/state';
 
-  let { children, data } = $props();
+  const { children, data } = $props();
 
   const navItems = [
     { icon: '📦', label: 'Containers', href: '/' },
@@ -14,12 +11,12 @@
     { icon: '⚙️', label: 'Settings', href: '/settings' }
   ];
 
-  let itemsWithActive = $derived(navItems.map(item => ({
+  const _itemsWithActive = $derived(navItems.map(item => ({
     ...item,
     active: page.url.pathname === item.href
   })));
 
-  let sidebarCollapsed = $state(false);
+  const _sidebarCollapsed = $state(false);
 </script>
 
 <div class="app">

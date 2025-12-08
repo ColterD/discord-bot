@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import Button from '$lib/components/ui/Button.svelte';
   import Card from '$lib/components/ui/Card.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
 
   const error = $derived(page.url.searchParams.get('error'));
 

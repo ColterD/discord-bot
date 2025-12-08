@@ -47,7 +47,7 @@ interface ProviderFactoryConfig {
  * Singleton factory for managing LLM providers
  */
 class ProviderFactory {
-  private static instance: ProviderFactory;
+  private static instance: ProviderFactory | undefined;
 
   private readonly providers = new Map<ProviderType, LLMProvider>();
   private readonly initializationPromises = new Map<ProviderType, Promise<LLMProvider>>();
@@ -92,7 +92,7 @@ class ProviderFactory {
       ProviderFactory.instance.shutdownAll().catch((err) => {
         logger.error("Error during factory reset shutdown", { error: err });
       });
-      ProviderFactory.instance = undefined as unknown as ProviderFactory;
+      ProviderFactory.instance = undefined;
     }
   }
 

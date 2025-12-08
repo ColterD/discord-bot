@@ -5,8 +5,8 @@
  */
 
 import { redirect } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
 import { getAuthUrl } from '$lib/server/auth';
+import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async ({ cookies }) => {
 	// Generate a random state for CSRF protection

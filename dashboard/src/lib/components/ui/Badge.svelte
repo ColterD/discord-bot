@@ -12,7 +12,7 @@
     children?: Snippet;
   }
 
-  let { variant = 'default', size = 'md', dot = false, pulse = false, children }: Props = $props();
+  const { variant = 'default', size = 'md', dot = false, pulse = false, children }: Props = $props();
 </script>
 
 <span class="badge badge-{variant} size-{size}">

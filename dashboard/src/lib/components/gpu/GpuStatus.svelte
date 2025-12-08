@@ -1,8 +1,8 @@
 <script lang="ts">
   import Card from '$lib/components/ui/Card.svelte';
   import Badge from '$lib/components/ui/Badge.svelte';
-  import type { GpuStatus } from '$lib/types';
   import type { OllamaRunningModel } from '$lib/server/gpu';
+  import type { GpuStatus } from '$lib/types';
 
   interface GpuInfo {
     gpu: GpuStatus | null;

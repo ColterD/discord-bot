@@ -1,24 +1,21 @@
 <script lang="ts">
   import { fromStore } from 'svelte/store';
-  import { ContainerList, LogViewer } from '$lib/components/containers';
-  import GpuStatusBanner from '$lib/components/gpu/GpuStatusBanner.svelte';
-  import CloudflareStatus from '$lib/components/status/CloudflareStatus.svelte';
-  import {
-    wsContainers,
-    connectionState,
-    connect,
-    disconnect
-  } from '$lib/stores/websocket';
   // Keep polling fallback for development
   import { fetchContainers, startPolling, stopPolling } from '$lib/stores/containers';
+  import {
+    connect,
+    connectionState,
+    disconnect, 
+    wsContainers
+  } from '$lib/stores/websocket';
   import type { ContainerInfo } from '$lib/types';
 
   // SSR data from +page.server.ts - provides instant initial render
-  let { data } = $props();
+  const { data } = $props();
 
   let selectedContainer = $state<string | null>(null);
   let logsVisible = $state(false);
-  let useWebSocket = $state(true);
+  const useWebSocket = $state(true);
 
   // Bridge Svelte 4 stores to Svelte 5 runes using fromStore()
   // This is the recommended pattern per Svelte 5 docs instead of manual subscriptions
@@ -26,12 +23,12 @@
   const connectionStateStore = fromStore(connectionState);
 
   // Derived state from stores - reactive and clean
-  let wsContainerList = $derived(wsContainerStore.current);
-  let wsConnectionState = $derived(connectionStateStore.current);
+  const wsContainerList = $derived(wsContainerStore.current);
+  const wsConnectionState = $derived(connectionStateStore.current);
 
   // Use SSR data until WebSocket provides updates
   // This gives instant page render, then live updates take over
-  let containers = $derived(wsContainerList.length > 0 ? wsContainerList : (data.containers as ContainerInfo[]));
+  const containers = $derived(wsContainerList.length > 0 ? wsContainerList : (data.containers as ContainerInfo[]));
 
   // Use $effect for lifecycle - per Svelte 5 docs, return cleanup function from $effect
   $effect(() => {
@@ -57,10 +54,17 @@
   }
 
   // Derived stats from containers (SSR or WebSocket)
-  let runningCount = $derived(containers.filter(c => c.state === 'running').length);
-  let totalCount = $derived(containers.length);
-  let stoppedCount = $derived(totalCount - runningCount);
-  let healthStatus = $derived(runningCount === totalCount ? 'healthy' : runningCount > 0 ? 'degraded' : 'critical');
+  const runningCount = $derived(containers.filter(c => c.state === 'running').length);
+  const totalCount = $derived(containers.length);
+  const stoppedCount = $derived(totalCount - runningCount);
+  const healthStatus = $derived(runningCount === totalCount ? 'healthy' : runningCount > 0 ? 'degraded' : 'critical');
+
+  // Silence unused var warnings - these are used in template
+  void wsConnectionState;
+  void logsVisible;
+  void selectedContainer;
+  void handleViewLogs;
+  void stoppedCount;
 </script>
 
 <svelte:head>

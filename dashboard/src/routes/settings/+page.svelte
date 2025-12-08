@@ -1,7 +1,7 @@
 <script lang="ts">
   import Card from '$lib/components/ui/Card.svelte';
   import Badge from '$lib/components/ui/Badge.svelte';
-  import type { SettingsCategory, SettingItem } from '$lib/types';
+  import type { SettingItem, SettingsCategory } from '$lib/types';
 
   interface SettingsResponse {
     categories: SettingsCategory[];
@@ -37,7 +37,7 @@
     fetchSettings();
   });
 
-  let activeCategoryData = $derived(settings?.categories.find((c) => c.id === activeCategory));
+  const activeCategoryData = $derived(settings?.categories.find((c) => c.id === activeCategory));
 
   function getTypeIcon(type: SettingItem['type']): string {
     switch (type) {

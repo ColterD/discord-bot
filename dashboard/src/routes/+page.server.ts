@@ -6,8 +6,8 @@
  * This eliminates the ~1 second perceived load time.
  */
 
-import type { PageServerLoad } from './$types';
 import { getStackContainers } from '$lib/server/docker';
+import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async () => {
 	try {

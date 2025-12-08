@@ -7,7 +7,7 @@
 
 import { createServer } from 'node:http';
 import { handler } from './build/handler.js';
-import { initWebSocketServer, closeWebSocketServer } from './src/lib/server/websocket.js';
+import { closeWebSocketServer, initWebSocketServer } from './src/lib/server/websocket.js';
 
 const PORT = Number.parseInt(process.env.PORT ?? '3000', 10);
 const HOST = process.env.HOST ?? '0.0.0.0';

@@ -15,7 +15,7 @@
     children?: Snippet;
   }
 
-  let {
+  const {
     variant = 'secondary',
     size = 'md',
     disabled = false,

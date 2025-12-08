@@ -66,6 +66,10 @@
     const { scrollTop, scrollHeight, clientHeight } = logsContainer;
     autoScroll = scrollHeight - scrollTop - clientHeight < 50;
   }
+
+  // Silence unused var warnings - these are used in template
+  void uid;
+  void handleScroll;
 </script>
 
 {#if visible}

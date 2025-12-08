@@ -1,24 +1,24 @@
 <script lang="ts">
   import { fromStore } from 'svelte/store';
-  import Badge from '../ui/Badge.svelte';
-  import Button from '../ui/Button.svelte';
-  import Card from '../ui/Card.svelte';
+  import Card from '$lib/components/ui/Card.svelte';
+  import Badge from '$lib/components/ui/Badge.svelte';
+  import Button from '$lib/components/ui/Button.svelte';
+  import { loadingContainers, restartContainer, stopContainer, startContainer } from '$lib/stores/containers';
   import type { ContainerInfo } from '$lib/types';
-  import { startContainer, stopContainer, restartContainer, loadingContainers } from '$lib/stores/containers';
 
   interface Props {
     container: ContainerInfo;
     onclick?: () => void;
   }
 
-  let { container, onclick }: Props = $props();
+  const { container, onclick }: Props = $props();
 
   // Bridge Svelte 4 store to Svelte 5 runes using fromStore() per docs
   const loadingStore = fromStore(loadingContainers);
 
   // Use $derived.by() for complex derivations per Svelte 5 docs
   type BadgeVariant = 'default' | 'success' | 'danger' | 'warning' | 'info';
-  let statusVariant = $derived.by<BadgeVariant>(() => {
+  const statusVariant = $derived.by<BadgeVariant>(() => {
     const variants: Record<string, BadgeVariant> = {
       running: 'success',
       exited: 'danger',
@@ -30,8 +30,8 @@
     return variants[container.state] ?? 'default';
   });
 
-  let isLoading = $derived(loadingStore.current.has(container.name));
-  let isRunning = $derived(container.state === 'running');
+  const isLoading = $derived(loadingStore.current.has(container.name));
+  const isRunning = $derived(container.state === 'running');
 
   function formatPort(port: { PrivatePort: number; PublicPort?: number; Type: string }): string {
     if (port.PublicPort) {
@@ -54,6 +54,9 @@
     if (cpu > 50) return 'var(--warning)';
     return 'var(--success)';
   }
+
+  // Silence unused import warnings - these are used in template
+  void onclick;
 </script>
 
 <Card padding="md" hover>

@@ -44,7 +44,7 @@
     const k = 1024;
     const sizes = ['B', 'KB', 'MB', 'GB'];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return `${Number.parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+    return `${Number.parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
   }
 
   function getUsageColor(percent: number): 'danger' | 'warning' | 'success' {
@@ -76,17 +76,17 @@
     return { line: linePath, area: areaPath };
   }
 
-  let cpuChart = $derived(getChartPath(metrics?.system.cpu ?? []));
-  let memoryChart = $derived(getChartPath(metrics?.system.memory ?? []));
+  const cpuChart = $derived(getChartPath(metrics?.system.cpu ?? []));
+  const memoryChart = $derived(getChartPath(metrics?.system.memory ?? []));
 
-  let currentCpu = $derived(
+  const currentCpu = $derived(
     metrics?.system.cpu.length ? metrics.system.cpu[metrics.system.cpu.length - 1].value : 0
   );
-  let currentMemory = $derived(
+  const currentMemory = $derived(
     metrics?.system.memory.length ? metrics.system.memory[metrics.system.memory.length - 1].value : 0
   );
 
-  let sortedContainers = $derived(
+  const sortedContainers = $derived(
     [...(metrics?.containers ?? [])].sort((a, b) => b.cpu - a.cpu)
   );
 </script>

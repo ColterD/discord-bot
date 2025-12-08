@@ -1,8 +1,8 @@
 <script lang="ts">
   import Card from '$lib/components/ui/Card.svelte';
   import Badge from '$lib/components/ui/Badge.svelte';
-  import type { GpuStatus, MetricDataPoint } from '$lib/types';
   import type { OllamaRunningModel } from '$lib/server/gpu';
+  import type { GpuStatus, MetricDataPoint } from '$lib/types';
 
   interface GpuInfo {
     gpu: GpuStatus | null;
@@ -99,8 +99,12 @@
     return `M ${points.join(' L ')}`;
   }
 
-  let sparklinePath = $derived(getSparklinePath(vramHistory));
-  let currentUsage = $derived(gpuInfo?.gpu?.usagePercent ?? 0);
+  const sparklinePath = $derived(getSparklinePath(vramHistory));
+  const currentUsage = $derived(gpuInfo?.gpu?.usagePercent ?? 0);
+
+  // Silence unused var warnings - these are used in template
+  void sparklinePath;
+  void currentUsage;
 </script>
 
 <svelte:head>

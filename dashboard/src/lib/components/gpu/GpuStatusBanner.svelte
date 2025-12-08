@@ -1,8 +1,7 @@
 <script lang="ts">
-  import Card from '$lib/components/ui/Card.svelte';
-  import Badge from '$lib/components/ui/Badge.svelte';
-  import type { GpuStatus } from '$lib/types';
+
   import type { OllamaRunningModel } from '$lib/server/gpu';
+  import type { GpuStatus } from '$lib/types';
 
   interface GpuInfo {
     gpu: GpuStatus | null;
@@ -12,8 +11,8 @@
   }
 
   let gpuInfo = $state<GpuInfo | null>(null);
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  let _loading = $state(true);
+  let _error = $state<string | null>(null);
 
   async function fetchGpuInfo() {
     try {
@@ -22,11 +21,11 @@
         throw new Error('Failed to fetch GPU info');
       }
       gpuInfo = await response.json();
-      error = null;
+      _error = null;
     } catch (e) {
-      error = e instanceof Error ? e.message : 'Unknown error';
+      _error = e instanceof Error ? e.message : 'Unknown error';
     } finally {
-      loading = false;
+      _loading = false;
     }
   }
 
@@ -37,7 +36,7 @@
     return () => clearInterval(interval);
   });
 
-  function formatBytes(bytes: number): string {
+  function _formatBytes(bytes: number): string {
     const mb = bytes;
     if (mb >= 1024) {
       return `${(mb / 1024).toFixed(1)} GB`;
@@ -45,20 +44,20 @@
     return `${mb.toFixed(0)} MB`;
   }
 
-  function getUsageColor(percent: number): 'danger' | 'warning' | 'success' {
+  function _getUsageColor(percent: number): 'danger' | 'warning' | 'success' {
     if (percent >= 90) return 'danger';
     if (percent >= 70) return 'warning';
     return 'success';
   }
 
-  function getUsageGradient(percent: number): string {
+  function _getUsageGradient(percent: number): string {
     if (percent >= 90) return 'var(--gradient-danger)';
     if (percent >= 70) return 'var(--gradient-warning)';
     return 'var(--gradient-success)';
   }
 
-  let primaryModel = $derived(gpuInfo?.loadedModels[0] ?? null);
-  let modelCount = $derived(gpuInfo?.loadedModels.length ?? 0);
+  const _primaryModel = $derived(gpuInfo?.loadedModels[0] ?? null);
+  const _modelCount = $derived(gpuInfo?.loadedModels.length ?? 0);
 </script>
 
 <Card variant="glass" padding="md">

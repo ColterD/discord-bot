@@ -6,10 +6,10 @@
  * to avoid conflicts with Vite's HMR WebSocket.
  */
 
-import type { ViteDevServer, Plugin } from 'vite';
-import { WebSocketServer, type WebSocket } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
+import type { Plugin, ViteDevServer } from 'vite';
+import { type WebSocket, WebSocketServer } from 'ws';
 import type { WebSocketMessage } from '$lib/types';
 
 /** Connected clients */

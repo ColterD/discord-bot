@@ -5,13 +5,13 @@
  * stores for container status, GPU metrics, and connection state.
  */
 
-import { writable, get } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type {
   ContainerInfo,
-  GpuStatus,
-  WebSocketMessage,
   DashboardStats,
-  MemoryInfo
+  GpuStatus,
+  MemoryInfo, 
+  WebSocketMessage
 } from '$lib/types';
 
 /** WebSocket connection state */
@@ -57,7 +57,7 @@ const RECONNECT_DELAY_MAX = 30000;
  */
 function getReconnectDelay(): number {
   const delay = Math.min(
-    RECONNECT_DELAY_BASE * Math.pow(2, reconnectAttempts),
+    RECONNECT_DELAY_BASE * 2 ** reconnectAttempts,
     RECONNECT_DELAY_MAX
   );
   // Add jitter to prevent thundering herd
@@ -126,7 +126,7 @@ function handleMessage(event: MessageEvent): void {
     wsError.set(null);
 
     switch (message.type) {
-      case 'containers':
+      case 'containers': {
         const containers = message.data as ContainerInfo[];
         const fingerprint = getContainerFingerprint(containers);
         const prevContainerState = getPrevState('containers');
@@ -144,8 +144,9 @@ function handleMessage(event: MessageEvent): void {
         wsContainers.set(containers);
         updateStats(containers);
         break;
+      }
 
-      case 'gpu':
+      case 'gpu': {
         const gpuData = message.data as GpuStatus;
         const gpuFingerprint = JSON.stringify(gpuData);
         const prevGpuState = getPrevState('gpu');
@@ -162,16 +163,18 @@ function handleMessage(event: MessageEvent): void {
         wsGpu.set(gpuData);
         wsStats.update(s => ({ ...s, gpu: gpuData }));
         break;
+      }
 
       case 'connected':
         connectionState.set('connected');
         reconnectAttempts = 0;
         break;
 
-      case 'error':
+      case 'error': {
         const errorData = message.data as { message: string };
         wsError.set(errorData.message);
         break;
+      }
 
       default:
         console.log('[WS Client] Unknown message type:', message.type);

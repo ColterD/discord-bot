@@ -11,7 +11,7 @@
     children?: Snippet;
   }
 
-  let { variant = 'default', padding = 'md', hover = false, glow = false, children }: Props = $props();
+  const { variant = 'default', padding = 'md', hover = false, glow = false, children }: Props = $props();
 </script>
 
 <div class="card variant-{variant} padding-{padding}" class:hover class:glow>

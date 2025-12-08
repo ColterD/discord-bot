@@ -1,7 +1,5 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import Button from '$lib/components/ui/Button.svelte';
-  import Card from '$lib/components/ui/Card.svelte';
 
   const statusMessages: Record<number, { title: string; description: string }> = {
     400: { title: 'Bad Request', description: 'The request could not be understood.' },
@@ -13,7 +11,7 @@
     503: { title: 'Service Unavailable', description: 'The service is temporarily unavailable.' }
   };
 
-  const info = $derived(statusMessages[page.status] ?? {
+  const _info = $derived(statusMessages[page.status] ?? {
     title: 'Error',
     description: page.error?.message ?? 'An unexpected error occurred.'
   });

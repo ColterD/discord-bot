@@ -5,10 +5,10 @@
  * to connected dashboard clients. Replaces polling with push-based updates.
  */
 
-import { WebSocketServer, type WebSocket } from 'ws';
 import type { Server } from 'node:http';
+import { type WebSocket, WebSocketServer } from 'ws';
+import type { ContainerInfo, GpuStatus, WebSocketMessage } from '$lib/types';
 import { getStackContainers } from './docker.js';
-import type { WebSocketMessage, ContainerInfo, GpuStatus } from '$lib/types';
 
 /** Connected WebSocket clients */
 const clients = new Set<WebSocket>();

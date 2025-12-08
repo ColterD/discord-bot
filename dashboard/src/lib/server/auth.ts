@@ -7,8 +7,8 @@
  * Session storage: Uses Valkey for production, in-memory fallback for dev.
  */
 
-import { dev } from '$app/environment';
 import Valkey from 'iovalkey';
+import { dev } from '$app/environment';
 
 /** Discord OAuth2 endpoints */
 const DISCORD_API = 'https://discord.com/api/v10';
@@ -74,7 +74,7 @@ async function initValkey(): Promise<void> {
 
 		await valkeyClient.connect();
 		valkeyConnected = true;
-	} catch (error) {
+	} catch (_error) {
 		console.warn('[Auth] Valkey unavailable, using in-memory fallback');
 		valkeyClient = null;
 	}
@@ -379,6 +379,6 @@ export function getAvatarUrl(user: Pick<Session, 'userId' | 'avatar'>): string {
 		return `https://cdn.discordapp.com/avatars/${user.userId}/${user.avatar}.png`;
 	}
 	// Default Discord avatar
-	const defaultIndex = Number.parseInt(user.userId) % 5;
+	const defaultIndex = Number.parseInt(user.userId, 10) % 5;
 	return `https://cdn.discordapp.com/embed/avatars/${defaultIndex}.png`;
 }

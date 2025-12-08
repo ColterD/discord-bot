@@ -220,7 +220,7 @@ function printConfig(ctx: TestContext): void {
   console.log("╚══════════════════════════════════════════════════════════════╝\n");
 
   console.log("Configuration:");
-  console.log(`  Account ID: ✓ SET (${ctx.accountId.length} chars)`);
+  console.log(`  Account ID: ✓ SET`);
   console.log(`  API Token: ✓ SET`);
   console.log(`  Router Model: ${ctx.routerModel}`);
   console.log(`  Embedding Model: ${ctx.embeddingModel}`);

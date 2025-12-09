@@ -146,7 +146,6 @@ export default {
     }
 
     try {
-
       // Chat completion endpoint
       if (url.pathname === "/chat" && request.method === "POST") {
         const body: ChatRequest = await request.json();
@@ -212,9 +211,7 @@ export default {
         const inputs = Array.isArray(body.input) ? body.input : [body.input];
 
         // Map OpenAI model names to Cloudflare models, or use default
-        const model = body.model?.startsWith("@cf/")
-          ? body.model
-          : DEFAULT_EMBEDDING_MODEL;
+        const model = body.model?.startsWith("@cf/") ? body.model : DEFAULT_EMBEDDING_MODEL;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const response = await (env.AI.run as any)(model, {

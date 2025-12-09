@@ -4,14 +4,14 @@ Edge-deployed proxy for Workers AI that provides low-latency AI inference.
 
 ## Endpoints Overview
 
-| Endpoint | Method | Auth | Description |
-|----------|--------|------|-------------|
-| `/health` | GET | No | Health check with edge location |
-| `/chat` | POST | Yes | Chat completion (Workers AI) |
-| `/embed` | POST | Yes | Embeddings (native format) |
-| `/v1` | GET | No | OpenAI API info |
-| `/v1/models` | GET | No | List available models |
-| `/v1/embeddings` | POST | Yes | Embeddings (OpenAI-compatible) |
+| Endpoint         | Method | Auth | Description                     |
+| ---------------- | ------ | ---- | ------------------------------- |
+| `/health`        | GET    | No   | Health check with edge location |
+| `/chat`          | POST   | Yes  | Chat completion (Workers AI)    |
+| `/embed`         | POST   | Yes  | Embeddings (native format)      |
+| `/v1`            | GET    | No   | OpenAI API info                 |
+| `/v1/models`     | GET    | No   | List available models           |
+| `/v1/embeddings` | POST   | Yes  | Embeddings (OpenAI-compatible)  |
 
 ## Why Use This?
 
@@ -131,6 +131,7 @@ List available models (OpenAI-compatible format). No authentication required.
 Generate embeddings (OpenAI-compatible format). Works with LangChain, LlamaIndex, ChromaDB, and other OpenAI-compatible clients. Requires `Authorization: Bearer <secret>`.
 
 **Request:**
+
 ```json
 {
   "model": "qwen3-embedding",
@@ -139,6 +140,7 @@ Generate embeddings (OpenAI-compatible format). Works with LangChain, LlamaIndex
 ```
 
 **Response:**
+
 ```json
 {
   "object": "list",

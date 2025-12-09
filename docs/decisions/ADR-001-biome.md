@@ -133,10 +133,12 @@ Keep Prettier for formatting (better ecosystem compatibility) and use Biome only
 Use Biome for both linting AND formatting.
 
 **Pros:**
+
 - Single tool, simpler configuration
 - Even faster
 
 **Cons:**
+
 - Formatting output differs slightly from Prettier
 - May cause diff noise in PRs during transition
 - Less ecosystem support
@@ -146,10 +148,12 @@ Use Biome for both linting AND formatting.
 Continue with current setup, fix import plugin issues manually.
 
 **Pros:**
+
 - No migration effort
 - Familiar tooling
 
 **Cons:**
+
 - Slower linting
 - Import rules still broken
 - No performance improvement

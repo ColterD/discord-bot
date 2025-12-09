@@ -86,11 +86,11 @@ enum IntentCategory {
 
 ### Free API Options
 
-| Provider                  | Free Tier                   | Best Use Case                                 | Latency    | Rate Limits        |
-| ------------------------- | --------------------------- | --------------------------------------------- | ---------- | ------------------ |
-| **Groq**                  | Unlimited (rate-limited)    | Classification via `llama-prompt-guard-2-22m` | ~50-100ms  | 30 RPM, 15K TPM    |
-| **Cloudflare Workers AI** | 10,000 neurons/day          | Embeddings (`bge-small-en-v1.5`)              | ~20-50ms   | None (quota-based) |
-| **HuggingFace Inference** | $0.10/month credits         | Fallback embeddings                           | ~100-200ms | Varies by provider |
+| Provider                  | Free Tier                | Best Use Case                                 | Latency    | Rate Limits        |
+| ------------------------- | ------------------------ | --------------------------------------------- | ---------- | ------------------ |
+| **Groq**                  | Unlimited (rate-limited) | Classification via `llama-prompt-guard-2-22m` | ~50-100ms  | 30 RPM, 15K TPM    |
+| **Cloudflare Workers AI** | 10,000 neurons/day       | Embeddings (`bge-small-en-v1.5`)              | ~20-50ms   | None (quota-based) |
+| **HuggingFace Inference** | $0.10/month credits      | Fallback embeddings                           | ~100-200ms | Varies by provider |
 
 ### Groq Integration (Primary)
 
@@ -223,12 +223,12 @@ comfyui:
 
 ### Optimizations Breakdown
 
-| Optimization            | Flag                      | Effect                                  | VRAM Impact               |
-| ----------------------- | ------------------------- | --------------------------------------- | ------------------------- |
-| **Torch Compile**       | `--fast`                  | 10-30% faster inference                 | Neutral                   |
-| **FP8 Text Encoder**    | `--fp8_e4m3fn-text-enc`   | Quantizes text encoder to FP8           | **~4GB saved**            |
-| **Low VRAM Mode**       | `--lowvram`               | Offloads models to CPU when not in use  | **~10GB freed** when idle |
-| **CUDA Malloc Async**   | `--cuda-malloc`           | Better memory allocation                | Reduces fragmentation     |
+| Optimization          | Flag                    | Effect                                 | VRAM Impact               |
+| --------------------- | ----------------------- | -------------------------------------- | ------------------------- |
+| **Torch Compile**     | `--fast`                | 10-30% faster inference                | Neutral                   |
+| **FP8 Text Encoder**  | `--fp8_e4m3fn-text-enc` | Quantizes text encoder to FP8          | **~4GB saved**            |
+| **Low VRAM Mode**     | `--lowvram`             | Offloads models to CPU when not in use | **~10GB freed** when idle |
+| **CUDA Malloc Async** | `--cuda-malloc`         | Better memory allocation               | Reduces fragmentation     |
 
 ## Implementation Phases
 

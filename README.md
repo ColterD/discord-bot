@@ -62,14 +62,14 @@ npm run dev                 # Start bot with hot reload
 
 ## Features
 
-| Category | Capabilities |
-|----------|-------------|
-| **AI Chat** | Local LLM via Ollama, streaming responses, multiple personalities |
-| **Memory** | 3-tier system: conversation context (Valkey), user profiles (ChromaDB), episodic memory |
-| **Tools** | Web search, URL fetching, arXiv papers, calculations, Wikipedia, chain-of-thought |
-| **Images** | ComfyUI integration for AI image generation |
-| **Security** | Impersonation detection, prompt injection protection, 4-tier tool permissions |
-| **Infrastructure** | Docker containerized, GPU/VRAM management, self-healing services |
+| Category           | Capabilities                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **AI Chat**        | Local LLM via Ollama, streaming responses, multiple personalities                       |
+| **Memory**         | 3-tier system: conversation context (Valkey), user profiles (ChromaDB), episodic memory |
+| **Tools**          | Web search, URL fetching, arXiv papers, calculations, Wikipedia, chain-of-thought       |
+| **Images**         | ComfyUI integration for AI image generation                                             |
+| **Security**       | Impersonation detection, prompt injection protection, 4-tier tool permissions           |
+| **Infrastructure** | Docker containerized, GPU/VRAM management, self-healing services                        |
 
 ## Architecture
 
@@ -106,13 +106,13 @@ npm run dev                 # Start bot with hot reload
 
 ### Services (via docker-compose.yml)
 
-| Service | Purpose | Port |
-|---------|---------|------|
-| Ollama | LLM inference | 11434 |
-| Valkey | Cache (Redis-compatible) | 6379 |
-| ChromaDB | Vector store for memory | 8000 |
-| SearXNG | Privacy-respecting search | 8080 |
-| ComfyUI | Image generation | 8188 |
+| Service  | Purpose                   | Port  |
+| -------- | ------------------------- | ----- |
+| Ollama   | LLM inference             | 11434 |
+| Valkey   | Cache (Redis-compatible)  | 6379  |
+| ChromaDB | Vector store for memory   | 8000  |
+| SearXNG  | Privacy-respecting search | 8080  |
+| ComfyUI  | Image generation          | 8188  |
 
 ### Setup
 
@@ -140,6 +140,7 @@ npm run dev
 All configuration is via environment variables. See [`.env.example`](.env.example) for the complete reference.
 
 **Required:**
+
 ```env
 DISCORD_TOKEN=your_bot_token
 DISCORD_CLIENT_ID=your_client_id
@@ -147,6 +148,7 @@ BOT_OWNER_IDS=your_discord_user_id
 ```
 
 **AI/LLM:**
+
 ```env
 OLLAMA_HOST=http://ollama:11434
 LLM_MODEL=qwen3:14b
@@ -154,6 +156,7 @@ LLM_USE_ORCHESTRATOR=true
 ```
 
 **Memory:**
+
 ```env
 VALKEY_URL=valkey://valkey:6379
 CHROMA_URL=http://chromadb:8000
@@ -162,27 +165,30 @@ CHROMA_URL=http://chromadb:8000
 ## Commands
 
 ### AI & Chat
-| Command | Description |
-|---------|-------------|
-| `/ask <question>` | Ask the AI (supports file attachments) |
-| `/agent <task>` | Autonomous task completion with tools |
-| `/research <topic>` | Deep research with web search |
-| `/imagine <prompt>` | Generate images via ComfyUI |
-| `/remember <fact>` | Store information in memory |
+
+| Command             | Description                            |
+| ------------------- | -------------------------------------- |
+| `/ask <question>`   | Ask the AI (supports file attachments) |
+| `/agent <task>`     | Autonomous task completion with tools  |
+| `/research <topic>` | Deep research with web search          |
+| `/imagine <prompt>` | Generate images via ComfyUI            |
+| `/remember <fact>`  | Store information in memory            |
 
 ### Utility
-| Command | Description |
-|---------|-------------|
-| `/ping` | Check latency |
-| `/help` | Show all commands |
-| `/ai-status` | AI service health |
+
+| Command          | Description        |
+| ---------------- | ------------------ |
+| `/ping`          | Check latency      |
+| `/help`          | Show all commands  |
+| `/ai-status`     | AI service health  |
 | `/clear-context` | Reset conversation |
 
 ### Moderation
-| Command | Permission |
-|---------|------------|
-| `/kick <member>` | Kick Members |
-| `/ban <member>` | Ban Members |
+
+| Command           | Permission      |
+| ----------------- | --------------- |
+| `/kick <member>`  | Kick Members    |
+| `/ban <member>`   | Ban Members     |
 | `/clear <amount>` | Manage Messages |
 
 The bot also responds to **@mentions** and **DMs**.
@@ -203,6 +209,7 @@ docker compose down
 ### Security Hardening
 
 The container runs with:
+
 - Read-only root filesystem
 - Non-root user (node:node)
 - Dropped Linux capabilities
@@ -211,13 +218,13 @@ The container runs with:
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/](docs/) | Documentation index |
-| [Architecture: Memory](docs/architecture/memory-system.md) | 3-tier memory system design |
-| [Architecture: Router](docs/architecture/intent-router.md) | Intent classification & cloud offloading |
-| [Operations: Recovery](docs/operations/recovery-playbooks.md) | Self-healing playbooks |
-| [ADR-001: Biome](docs/decisions/ADR-001-biome.md) | Linting toolchain decision |
+| Document                                                      | Description                              |
+| ------------------------------------------------------------- | ---------------------------------------- |
+| [docs/](docs/)                                                | Documentation index                      |
+| [Architecture: Memory](docs/architecture/memory-system.md)    | 3-tier memory system design              |
+| [Architecture: Router](docs/architecture/intent-router.md)    | Intent classification & cloud offloading |
+| [Operations: Recovery](docs/operations/recovery-playbooks.md) | Self-healing playbooks                   |
+| [ADR-001: Biome](docs/decisions/ADR-001-biome.md)             | Linting toolchain decision               |
 
 ## Development
 

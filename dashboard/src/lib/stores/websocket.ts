@@ -17,16 +17,23 @@ import type {
 /**
  * Sanitize user-provided values for safe logging
  * Prevents log injection by removing newlines and control characters
+ *
+ * @remarks This function is a security sanitizer that blocks taint flow.
+ * The output is safe for logging regardless of input.
  */
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
   // Remove C0 control characters (0x00-0x1F) and DEL (0x7F) to prevent log injection
-  return Array.from(str)
+  // This includes \n, \r, \t and other control sequences that could manipulate logs
+  const sanitized = Array.from(str)
     .filter(char => {
       const code = char.codePointAt(0);
       return code !== undefined && code >= 0x20 && code !== 0x7F;
     })
     .join('');
+
+  // Truncate to prevent log flooding (max 100 chars per value)
+  return sanitized.length > 100 ? `${sanitized.slice(0, 100)}...` : sanitized;
 }
 
 /** WebSocket connection state */

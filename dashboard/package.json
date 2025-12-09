@@ -33,5 +33,8 @@
 		"iovalkey": "^0.3.3",
 		"layerchart": "^1.0.12",
 		"ws": "^8.18.3"
+	},
+	"overrides": {
+		"cookie": ">=0.7.0"
 	}
 }

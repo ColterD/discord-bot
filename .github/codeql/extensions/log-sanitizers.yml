@@ -1,0 +1,24 @@
+# CodeQL Data Extension for custom log sanitizers
+# This marks our sanitizeForLog function as blocking taint flow for log injection
+#
+# The sanitizeForLog function in websocket.ts removes control characters
+# (including newlines) which prevents log injection attacks.
+extensions:
+  # Mark sanitizeForLog as a neutral model - no taint propagation
+  - addsTo:
+      pack: codeql/javascript-all
+      extensible: neutralModel
+    data:
+      # Package name (empty for local), function access path, kind
+      # "summary" neutral means the function doesn't propagate taint
+      - ["", "Member[sanitizeForLog]", "summary"]
+
+  # Alternative: use summaryModel with no taint propagation
+  # This explicitly models that the return value is a clean string
+  - addsTo:
+      pack: codeql/javascript-all
+      extensible: summaryModel
+    data:
+      # Type, access path, input, output, kind
+      # Using empty type for local functions
+      - ["", "Member[sanitizeForLog]", "Argument[0]", "ReturnValue", "value"]

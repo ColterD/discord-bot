@@ -10,14 +10,11 @@ import { describe, expect, it } from "vitest";
 
 // Import the sanitizer logic we want to fuzz
 // Since sanitizeForLog is internal to websocket.ts, we recreate it here for testing
+// Uses .replaceAll() which CodeQL recognizes as a log injection sanitizer
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
-  const sanitized = Array.from(str)
-    .filter((char) => {
-      const code = char.codePointAt(0);
-      return code !== undefined && code >= 0x20 && code !== 0x7f;
-    })
-    .join("");
+  // Remove control characters using \p{Cc} Unicode property escape (matches all control chars)
+  const sanitized = str.replaceAll(/\p{Cc}/gu, "");
   return sanitized.length > 100 ? `${sanitized.slice(0, 100)}...` : sanitized;
 }
 

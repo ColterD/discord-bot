@@ -25,9 +25,9 @@ import type {
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
   // Remove control characters using .replaceAll() - CodeQL recognizes this pattern
-  // as a sanitizer for log injection when the regex matches \n
-  // Uses Unicode property escape \p{Cc} to match all control characters (C0, C1, DEL)
-  const sanitized = str.replaceAll(/\p{Cc}/gu, '');
+  // as a sanitizer for log injection when the regex matches \n explicitly
+  // Includes \n \r explicitly so CodeQL's StringReplaceSanitizer detects this
+  const sanitized = str.replaceAll(/[\n\r\p{Cc}]/gu, '');
 
   // Truncate to prevent log flooding (max 100 chars per value)
   return sanitized.length > 100 ? `${sanitized.slice(0, 100)}...` : sanitized;

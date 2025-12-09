@@ -1,5 +1,7 @@
 # Stage 1: Build the SvelteKit application
-FROM node:22-slim AS builder
+# Pinned to specific SHA for reproducible builds - update periodically for security patches
+# To get latest: docker pull node:22-slim && docker inspect node:22-slim --format='{{index .RepoDigests 0}}'
+FROM node:22-slim@sha256:5c8ab72c248a05b4a293172fca2484e9baaab12aacc824e9a6a612364afb9df7 AS builder
 
 WORKDIR /app
 

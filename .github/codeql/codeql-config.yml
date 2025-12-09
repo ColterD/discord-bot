@@ -6,3 +6,9 @@ paths-ignore:
   - tests/manual/**
   # Test output files
   - tests/output_*
+
+# Custom model packs for security analysis
+# The extensions directory contains our custom sanitizer models
+packs:
+  - codeql/javascript-queries
+  - .github/codeql/extensions

@@ -1,4 +1,4 @@
-# Memory Architecture Documentation
+# Memory Architecture
 
 This document describes the 3-tier memory system used by the Discord bot, inspired by cutting-edge AI memory research from Mem0 and MemGPT/Letta.
 
@@ -304,7 +304,7 @@ Current implementation uses **ChromaDB**. Research comparison:
 
 | Feature           | ChromaDB  | LanceDB        | Qdrant    |
 | ----------------- | --------- | -------------- | --------- |
-| **Embedded**      | ❌ Server | ✅ Embedded    | ❌ Server |
+| **Embedded**      | No Server | Embedded       | No Server |
 | **TypeScript**    | Good      | **Native**     | Good      |
 | **Performance**   | Good      | Excellent      | **Best**  |
 | **Docker**        | Required  | **Not needed** | Required  |

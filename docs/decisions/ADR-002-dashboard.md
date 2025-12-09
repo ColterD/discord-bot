@@ -1,6 +1,9 @@
-# Dashboard SvelteKit Migration Plan
+# ADR-002: SvelteKit Dashboard
 
-## Current State
+**Status**: Proposed
+**Date**: December 2025
+
+## Context
 
 The dashboard is currently implemented as:
 
@@ -9,7 +12,11 @@ The dashboard is currently implemented as:
 - **Real-time**: WebSocket for live updates
 - **Features**: Container management, GPU monitoring, logs, metrics
 
-## Target Architecture: SvelteKit
+## Decision
+
+Migrate to **SvelteKit** for full-stack dashboard.
+
+## Rationale
 
 ### Why SvelteKit?
 
@@ -20,26 +27,9 @@ The dashboard is currently implemented as:
 5. **File-based routing**: Intuitive structure
 6. **Discord UI patterns**: Component-based like Discord's React
 
-### Migration Strategy
+## Target Architecture
 
-#### Phase 1: Project Setup
-
-```bash
-cd dashboard-new
-npm create svelte@latest . -- --template skeleton --types typescript
-npm install
-```
-
-#### Phase 2: API Routes Migration
-
-Express endpoints → SvelteKit server routes:
-
-- `GET /api/containers` → `src/routes/api/containers/+server.ts`
-- `POST /api/containers/:name/start` → `src/routes/api/containers/[name]/start/+server.ts`
-- `GET /api/gpu` → `src/routes/api/gpu/+server.ts`
-- etc.
-
-#### Phase 3: Component Architecture
+### Component Structure
 
 ```
 src/
@@ -83,7 +73,7 @@ src/
 └── app.css                   # Global styles (Discord theme)
 ```
 
-#### Phase 4: Discord-like Styling
+### Discord-like Styling
 
 ```css
 :root {
@@ -113,7 +103,7 @@ src/
 }
 ```
 
-#### Phase 5: WebSocket Integration
+### WebSocket Integration
 
 ```typescript
 // src/lib/stores/websocket.ts
@@ -149,15 +139,9 @@ function createWebSocketStore() {
 }
 ```
 
-## Implementation Priority
+## API Routes Migration
 
-1. **Project scaffold** - Create SvelteKit project structure
-2. **Docker API routes** - Port container management
-3. **GPU monitoring** - Real-time VRAM display
-4. **Log streaming** - WebSocket-based log viewer
-5. **Discord styling** - Theme and component library
-
-## Files to Migrate
+Express endpoints → SvelteKit server routes:
 
 | Current File             | SvelteKit Location                     |
 | ------------------------ | -------------------------------------- |
@@ -186,6 +170,14 @@ function createWebSocketStore() {
 }
 ```
 
+## Implementation Priority
+
+1. **Project scaffold** - Create SvelteKit project structure
+2. **Docker API routes** - Port container management
+3. **GPU monitoring** - Real-time VRAM display
+4. **Log streaming** - WebSocket-based log viewer
+5. **Discord styling** - Theme and component library
+
 ## Verification Checklist
 
 - [ ] All container management functions work
@@ -196,6 +188,39 @@ function createWebSocketStore() {
 - [ ] Error handling and loading states
 - [ ] Mobile-responsive layout
 
----
+## Alternatives Considered
 
-_This is a planning document. Implementation requires user approval before proceeding._
+### Keep Express + Vanilla JS
+
+**Pros**: No migration effort
+**Cons**: No TypeScript, harder to maintain, no component reuse
+
+### React/Next.js
+
+**Pros**: Popular, lots of resources
+**Cons**: Heavier runtime, more complex setup
+
+### Vue/Nuxt
+
+**Pros**: Similar to Svelte in philosophy
+**Cons**: Less familiar, larger bundle size
+
+## Consequences
+
+### Positive
+
+- TypeScript throughout
+- Component-based architecture
+- Faster development with hot reload
+- Better code organization
+- Smaller bundle size
+
+### Negative
+
+- Migration effort required
+- Team needs to learn SvelteKit
+- Two different runtimes (bot is Node, dashboard is SvelteKit)
+
+## Status
+
+**Proposed** - Awaiting user approval before implementation.

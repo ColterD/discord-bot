@@ -1,7 +1,6 @@
 # Recovery Playbooks
 
-> **Purpose**: Known issues and automated recovery procedures for the self-healing system.
-> **Last Updated**: December 6, 2025
+> Self-healing procedures for all services in the Discord Bot infrastructure.
 
 This document serves as a reference for the self-healing infrastructure. Each playbook defines:
 
@@ -102,19 +101,6 @@ curl -X POST http://localhost:11434/api/pull -d '{"name": "qwen3:14b"}'
 docker exec ollama df -h /root/.ollama
 ```
 
-**Claude Prompt**:
-
-```
-Ollama can't load my model. Error from logs:
-[PASTE ERROR]
-
-Model I'm trying to use: [MODEL_NAME]
-Available models from /api/tags: [LIST]
-Disk space in container: [df -h OUTPUT]
-
-Why can't it load and how do I fix it?
-```
-
 ---
 
 ### Slow Response / Timeout
@@ -181,20 +167,6 @@ netstat -tlnp | grep 8000
 docker compose restart chromadb
 ```
 
-**Claude Prompt**:
-
-```
-ChromaDB won't accept connections. Container is running but health checks fail.
-
-Container status: [docker ps output for chromadb]
-Last 30 lines of logs:
-[docker logs chromadb --tail 30]
-
-Port binding check: [netstat output]
-
-What's wrong and how do I fix it?
-```
-
 ---
 
 ### Collection Corruption
@@ -222,19 +194,6 @@ curl http://localhost:8000/api/v2/collections
 
 # If corrupted, may need to restore from backup
 # or rebuild embeddings from source data
-```
-
-**Claude Prompt**:
-
-```
-ChromaDB collection appears corrupted. Queries are failing with:
-[ERROR MESSAGE]
-
-Collection name: [NAME]
-Approximate document count: [COUNT]
-Last successful operation: [TIMESTAMP/DESCRIPTION]
-
-How do I diagnose and recover without losing data?
 ```
 
 ---
@@ -333,58 +292,6 @@ sudo nvidia-smi --gpu-reset
 
 # Restart with fresh GPU state
 docker compose restart comfyui
-```
-
-**Claude Prompt**:
-
-```
-ComfyUI can't see my GPU. Host nvidia-smi works but container doesn't.
-
-Host nvidia-smi output:
-[OUTPUT]
-
-Container nvidia-smi output:
-[OUTPUT or ERROR]
-
-docker-compose.yml GPU config:
-[RELEVANT SECTION]
-
-Docker version: [docker --version]
-NVIDIA Container Toolkit: [nvidia-container-cli --version]
-
-Why can't the container access the GPU?
-```
-
----
-
-### Workflow Execution Failed
-
-**Symptoms**:
-
-- `/prompt` returns error
-- `/history/{id}` shows failed status
-- Logs show node execution errors
-
-**Auto-Recovery**:
-
-1. Clear current queue: `POST /queue` with clear action
-2. Unload models: `POST /free {"unload_models": true}`
-3. Wait 5 seconds
-4. Retry with simplified workflow
-
-**Manual Fix**:
-
-```bash
-# Check queue status
-curl http://localhost:8188/queue
-
-# Clear everything
-curl -X POST http://localhost:8188/free \
-  -H "Content-Type: application/json" \
-  -d '{"unload_models": true, "free_memory": true}'
-
-# Check for missing models
-docker exec comfyui ls -la /data/diffusion_models/
 ```
 
 ---
@@ -521,20 +428,6 @@ docker compose up -d
 
 ---
 
-## Adding New Playbooks
-
-When adding a new recovery playbook, include:
-
-1. **Service Name** and **Issue Title**
-2. **Symptoms**: How the health monitor detects this
-3. **Auto-Recovery**: Steps in order, with wait times
-4. **Manual Fix**: Commands the owner can run
-5. **Claude Prompt**: Template with placeholders for dynamic data
-
-The self-healing system reads these playbooks to determine recovery steps. Keep them updated as you discover new failure modes.
-
----
-
 ## Recovery Priority Order
 
 When multiple services are down, recover in this order:
@@ -556,3 +449,17 @@ When multiple services are down, recover in this order:
 | GPU issues                | 1 attempt              | Immediately after failure |
 | Data corruption suspected | 0 attempts             | Immediately               |
 | Rate limiting             | 0 attempts             | 5 minutes of limits       |
+
+---
+
+## Adding New Playbooks
+
+When adding a new recovery playbook, include:
+
+1. **Service Name** and **Issue Title**
+2. **Symptoms**: How the health monitor detects this
+3. **Auto-Recovery**: Steps in order, with wait times
+4. **Manual Fix**: Commands the owner can run
+5. **Claude Prompt**: Template with placeholders for dynamic data
+
+The self-healing system reads these playbooks to determine recovery steps.

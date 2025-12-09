@@ -13,8 +13,8 @@ import { describe, expect, it } from "vitest";
 // Uses .replaceAll() which CodeQL recognizes as a log injection sanitizer
 function sanitizeForLog(value: unknown): string {
   const str = String(value);
-  // Remove control characters using \p{Cc} Unicode property escape (matches all control chars)
-  const sanitized = str.replaceAll(/\p{Cc}/gu, "");
+  // Remove control characters - includes \n \r explicitly for CodeQL detection
+  const sanitized = str.replaceAll(/[\n\r\p{Cc}]/gu, "");
   return sanitized.length > 100 ? `${sanitized.slice(0, 100)}...` : sanitized;
 }
 

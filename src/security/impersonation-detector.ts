@@ -65,9 +65,23 @@ function getMatrixValue(dp: number[][], row: number, col: number): number {
 }
 
 /**
+ * Maximum input length for Levenshtein distance calculation
+ * Longer strings would create O(n*m) memory usage, risking DoS
+ */
+const MAX_LEVENSHTEIN_INPUT_LENGTH = 1000;
+
+/**
  * Calculate Levenshtein distance between two strings
+ * Protected against DoS via input length limit
  */
 function levenshteinDistance(str1: string, str2: string): number {
+  // DoS protection: Limit input length to prevent memory exhaustion
+  // O(n*m) memory for very long strings could crash the process
+  if (str1.length > MAX_LEVENSHTEIN_INPUT_LENGTH || str2.length > MAX_LEVENSHTEIN_INPUT_LENGTH) {
+    // Fall back to simple length-based comparison for very long strings
+    return str1 === str2 ? 0 : Math.max(str1.length, str2.length);
+  }
+
   const m = str1.length;
   const n = str2.length;
   const dp = initializeMatrix(m, n);
@@ -224,34 +238,36 @@ function detectNameSimilarity(displayName: string, username: string): ThreatDeta
 
 /**
  * Normalize unicode homoglyphs to ASCII equivalents
+ * Uses NFKC normalization first, then applies additional mappings
  */
 function normalizeHomoglyphs(str: string): string {
+  // NFKC normalization handles many confusables automatically
+  // (fullwidth chars, circled letters, mathematical variants, etc.)
+  let result = str.normalize("NFKC").toLowerCase();
+
+  // Additional homoglyph mappings for characters NFKC doesn't handle
   const homoglyphMap: Record<string, string> = {
-    // Common Latin-lookalike characters
-    а: "a", // Cyrillic
-    е: "e", // Cyrillic
-    і: "i", // Cyrillic
-    о: "o", // Cyrillic
-    р: "p", // Cyrillic
-    с: "c", // Cyrillic
-    х: "x", // Cyrillic
-    у: "y", // Cyrillic
-    ω: "w", // Greek
-    ν: "v", // Greek
-    // Mathematical/special characters
-    "𝐚": "a",
-    "𝐛": "b",
-    "𝐨": "o",
-    // Zero-width characters (just remove)
+    // Common Cyrillic lookalikes (NFKC doesn't normalize these)
+    а: "a", // Cyrillic small a (U+0430)
+    е: "e", // Cyrillic small e (U+0435)
+    і: "i", // Cyrillic small i (U+0456)
+    о: "o", // Cyrillic small o (U+043E)
+    р: "p", // Cyrillic small r (U+0440)
+    с: "c", // Cyrillic small s (U+0441)
+    х: "x", // Cyrillic small kha (U+0445)
+    у: "y", // Cyrillic small u (U+0443)
+    // Greek lookalikes
+    ω: "w", // Greek small omega
+    ν: "v", // Greek small nu
+    // Zero-width characters (remove entirely)
     "\u200B": "", // Zero-width space
     "\u200C": "", // Zero-width non-joiner
     "\u200D": "", // Zero-width joiner
     "\uFEFF": "", // BOM
   };
 
-  let result = str.toLowerCase();
   for (const [homoglyph, replacement] of Object.entries(homoglyphMap)) {
-    result = result.split(homoglyph).join(replacement);
+    result = result.replaceAll(homoglyph, replacement);
   }
 
   return result;

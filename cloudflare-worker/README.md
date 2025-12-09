@@ -2,6 +2,17 @@
 
 Edge-deployed proxy for Workers AI that provides low-latency AI inference.
 
+## Endpoints Overview
+
+| Endpoint         | Method | Auth | Description                     |
+| ---------------- | ------ | ---- | ------------------------------- |
+| `/health`        | GET    | No   | Health check with edge location |
+| `/chat`          | POST   | Yes  | Chat completion (Workers AI)    |
+| `/embed`         | POST   | Yes  | Embeddings (native format)      |
+| `/v1`            | GET    | No   | OpenAI API info                 |
+| `/v1/models`     | GET    | No   | List available models           |
+| `/v1/embeddings` | POST   | Yes  | Embeddings (OpenAI-compatible)  |
+
 ## Why Use This?
 
 The Cloudflare REST API (`api.cloudflare.com`) is centralized (likely in SF). This Worker runs at the **edge** - the Cloudflare datacenter closest to you - for much lower latency.
@@ -76,7 +87,7 @@ Chat completion. Requires `Authorization: Bearer <secret>`.
 
 ### `POST /embed`
 
-Generate embeddings. Requires `Authorization: Bearer <secret>`.
+Generate embeddings (native format). Requires `Authorization: Bearer <secret>`.
 
 ```json
 {
@@ -84,6 +95,71 @@ Generate embeddings. Requires `Authorization: Bearer <secret>`.
   "text": "Hello world"
 }
 ```
+
+### `GET /v1`
+
+OpenAI-compatible API info endpoint. No authentication required. Useful for health checks from OpenAI-compatible clients.
+
+```json
+{
+  "object": "api",
+  "version": "v1",
+  "endpoints": ["/v1/models", "/v1/embeddings"]
+}
+```
+
+### `GET /v1/models`
+
+List available models (OpenAI-compatible format). No authentication required.
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "qwen3-embedding",
+      "object": "model",
+      "owned_by": "cloudflare",
+      "root": "@cf/qwen/qwen3-embedding-0.6b"
+    }
+  ]
+}
+```
+
+### `POST /v1/embeddings`
+
+Generate embeddings (OpenAI-compatible format). Works with LangChain, LlamaIndex, ChromaDB, and other OpenAI-compatible clients. Requires `Authorization: Bearer <secret>`.
+
+**Request:**
+
+```json
+{
+  "model": "qwen3-embedding",
+  "input": "Hello world"
+}
+```
+
+**Response:**
+
+```json
+{
+  "object": "list",
+  "data": [
+    {
+      "object": "embedding",
+      "embedding": [0.1, 0.2, ...],
+      "index": 0
+    }
+  ],
+  "model": "@cf/qwen/qwen3-embedding-0.6b",
+  "usage": {
+    "prompt_tokens": 3,
+    "total_tokens": 3
+  }
+}
+```
+
+The `input` field can be a single string or an array of strings for batch embedding.
 
 ## Local Development
 

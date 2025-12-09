@@ -13,6 +13,50 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("ToolPermissions");
 
 /**
+ * Tool name validation pattern
+ * Prevents injection attacks by ensuring tool names only contain safe characters
+ * Allows: lowercase letters, digits, underscores, hyphens (must start with letter)
+ */
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_-]*$/i;
+
+/**
+ * Empty reason for hidden tools - indicates tool doesn't "exist" for this user
+ * Using a constant makes the security intent explicit
+ */
+const HIDDEN_TOOL_REASON = "";
+
+/**
+ * Pre-computed permission Sets for O(1) lookup instead of O(n) array.includes()
+ * Lazily initialized on first use to avoid startup overhead
+ */
+let permissionSets: {
+  alwaysBlocked: Set<string>;
+  ownerOnly: Set<string>;
+  adminOnly: Set<string>;
+  moderatorOnly: Set<string>;
+} | null = null;
+
+function getPermissionSets() {
+  if (!permissionSets) {
+    const { tools } = config.security;
+    permissionSets = {
+      alwaysBlocked: new Set(tools.alwaysBlocked),
+      ownerOnly: new Set(tools.ownerOnly),
+      adminOnly: new Set(tools.adminOnly),
+      moderatorOnly: new Set(tools.moderatorOnly),
+    };
+  }
+  return permissionSets;
+}
+
+/**
+ * Validate that a tool name is safe
+ */
+function isValidToolName(toolName: string): boolean {
+  return toolName.length > 0 && toolName.length <= 64 && TOOL_NAME_PATTERN.test(toolName);
+}
+
+/**
  * Tool permission tiers
  */
 export enum ToolPermission {
@@ -45,25 +89,31 @@ export interface ToolAccessResult {
  * Get the permission level required for a tool
  */
 export function getToolPermission(toolName: string): ToolPermission {
-  const { tools } = config.security;
+  // Validate tool name to prevent injection attacks
+  if (!isValidToolName(toolName)) {
+    log.warn(`Invalid tool name rejected: ${toolName.slice(0, 64)}`);
+    return ToolPermission.AlwaysBlocked;
+  }
 
-  // Check always blocked first
-  if ((tools.alwaysBlocked as readonly string[]).includes(toolName)) {
+  const sets = getPermissionSets();
+
+  // Check always blocked first (O(1) Set lookup)
+  if (sets.alwaysBlocked.has(toolName)) {
     return ToolPermission.AlwaysBlocked;
   }
 
   // Check owner-only
-  if ((tools.ownerOnly as readonly string[]).includes(toolName)) {
+  if (sets.ownerOnly.has(toolName)) {
     return ToolPermission.OwnerOnly;
   }
 
   // Check admin-only
-  if ((tools.adminOnly as readonly string[]).includes(toolName)) {
+  if (sets.adminOnly.has(toolName)) {
     return ToolPermission.AdminOnly;
   }
 
   // Check moderator-only
-  if ((tools.moderatorOnly as readonly string[]).includes(toolName)) {
+  if (sets.moderatorOnly.has(toolName)) {
     return ToolPermission.ModeratorOnly;
   }
 
@@ -99,7 +149,7 @@ export function checkToolAccess(userId: string, toolName: string): ToolAccessRes
     // CRITICAL: Non-owners don't see owner-only tools at all
     return {
       allowed: false,
-      reason: "", // Empty reason - tool doesn't "exist" for this user
+      reason: HIDDEN_TOOL_REASON,
       visible: false,
     };
   }
@@ -166,17 +216,6 @@ export function getExecutableToolsForUser<T extends { name: string }>(
     const access = checkToolAccess(userId, tool.name);
     return access.allowed;
   });
-}
-
-/**
- * Log a tool access attempt
- */
-export function logToolAccess(userId: string, toolName: string, result: ToolAccessResult): void {
-  if (result.allowed) {
-    log.debug(`User ${userId} accessed tool ${toolName}: ${result.reason}`);
-  } else {
-    log.info(`User ${userId} denied access to tool ${toolName}: ${result.reason || "hidden tool"}`);
-  }
 }
 
 /**

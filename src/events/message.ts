@@ -162,21 +162,38 @@ type TypingChannel =
   | StageChannel;
 
 /**
+ * Maximum typing errors before stopping retry attempts
+ */
+const MAX_TYPING_ERRORS = 3;
+
+/**
  * Helper to keep typing indicator active during long operations
+ * Includes retry storm protection - stops retrying after MAX_TYPING_ERRORS failures
  */
 function startContinuousTyping(channel: TypingChannel): () => void {
   let stopped = false;
+  let errorCount = 0;
 
   // Send initial typing
   channel.sendTyping().catch((err) => {
-    log.debug(`Typing indicator error: ${err instanceof Error ? err.message : String(err)}`);
+    errorCount++;
+    log.debug(
+      `Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`
+    );
   });
 
   // Keep refreshing typing indicator every 8 seconds
   const interval = setInterval(() => {
-    if (!stopped) {
+    if (!stopped && errorCount < MAX_TYPING_ERRORS) {
       channel.sendTyping().catch((err) => {
-        log.debug(`Typing indicator error: ${err instanceof Error ? err.message : String(err)}`);
+        errorCount++;
+        log.debug(
+          `Typing indicator error (${errorCount}/${MAX_TYPING_ERRORS}): ${err instanceof Error ? err.message : String(err)}`
+        );
+        if (errorCount >= MAX_TYPING_ERRORS) {
+          log.debug("Stopping typing indicator retries after too many errors");
+          clearInterval(interval);
+        }
       });
     }
   }, TYPING_INTERVAL_MS);
@@ -568,6 +585,9 @@ export class MessageEvent {
     message: ArgsOf<"messageCreate">[0],
     botUserId: string | undefined
   ): Promise<void> {
+    // Guard against undefined botUserId - Discord API requires a valid ID
+    if (!botUserId) return;
+
     try {
       await message.reactions.cache.get("⏳")?.users.remove(botUserId);
     } catch {

@@ -88,7 +88,6 @@ src/
 ├── components/           # Discord UI components
 ├── events/               # Discord event handlers
 ├── guards/               # Permission guards
-├── guards/               # Permission guards
 └── utils/
     ├── cache.ts          # Valkey client with fallback
     ├── security.ts       # Security utilities

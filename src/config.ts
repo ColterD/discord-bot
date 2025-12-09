@@ -108,6 +108,7 @@ export const envSchema = z.object({
   MEMORY_SUMMARIZE_AFTER_MESSAGES: z.coerce.number().int().min(1).default(15),
   MEMORY_SUMMARIZE_AFTER_IDLE_MS: z.coerce.number().int().min(60000).default(1800000),
   MEMORY_MAX_CONTEXT_TOKENS: z.coerce.number().int().min(1024).default(4096),
+  MEMORY_CHARS_PER_TOKEN: z.coerce.number().min(1).max(10).default(4),
   MEMORY_PROFILE_THRESHOLD: z.coerce.number().min(0).max(1).default(0.4),
   MEMORY_EPISODIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.55),
   MEMORY_TIME_DECAY_PER_DAY: z.coerce.number().min(0.5).max(1).default(0.98),
@@ -273,6 +274,7 @@ export const config = {
     summarizeAfterMessages: _env.MEMORY_SUMMARIZE_AFTER_MESSAGES,
     summarizeAfterIdleMs: _env.MEMORY_SUMMARIZE_AFTER_IDLE_MS,
     maxContextTokens: _env.MEMORY_MAX_CONTEXT_TOKENS,
+    charsPerToken: _env.MEMORY_CHARS_PER_TOKEN,
     tierAllocation: {
       activeContext: 0.5,
       userProfile: 0.3,

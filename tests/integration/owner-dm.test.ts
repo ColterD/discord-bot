@@ -5,8 +5,8 @@
 
 import "dotenv/config";
 import { Client, GatewayIntentBits } from "discord.js";
-import { AlertCategory, getNotificationService } from "../src/services/notifications.js";
-import { createLogger } from "../src/utils/logger.js";
+import { AlertCategory, getNotificationService } from "../../src/services/notifications.js";
+import { createLogger } from "../../src/utils/logger.js";
 
 const log = createLogger("TestOwnerDM");
 

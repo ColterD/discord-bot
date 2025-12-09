@@ -49,5 +49,3 @@ export const NotBot: GuardFunction<
     await next();
   }
 };
-
-export default NotBot;

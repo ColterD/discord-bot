@@ -5,9 +5,12 @@
  * Proxies requests to Workers AI binding.
  *
  * Endpoints:
- * - POST /chat     - Chat completion (router model)
- * - POST /embed    - Generate embeddings
- * - GET  /health   - Health check with edge location
+ * - POST /chat           - Chat completion (router model)
+ * - POST /embed          - Generate embeddings (native format)
+ * - POST /v1/embeddings  - Generate embeddings (OpenAI-compatible)
+ * - GET  /v1             - OpenAI API info endpoint
+ * - GET  /v1/models      - List available models (OpenAI-compatible)
+ * - GET  /health         - Health check with edge location
  */
 
 export interface Env {
@@ -26,6 +29,16 @@ interface EmbedRequest {
   model: string;
   text: string | string[];
 }
+
+/** OpenAI-compatible embedding request format */
+interface OpenAIEmbedRequest {
+  model: string;
+  input: string | string[];
+  encoding_format?: "float" | "base64";
+}
+
+/** Default embedding model for OpenAI-compatible endpoint (1024 dims) */
+const DEFAULT_EMBEDDING_MODEL = "@cf/qwen/qwen3-embedding-0.6b";
 
 /**
  * Authenticate request using bearer token
@@ -94,6 +107,39 @@ export default {
       );
     }
 
+    // OpenAI-compatible base endpoint - no auth required
+    // Useful for health checks from OpenAI-compatible clients
+    if (url.pathname === "/v1" && request.method === "GET") {
+      return Response.json(
+        {
+          object: "api",
+          version: "v1",
+          endpoints: ["/v1/models", "/v1/embeddings"],
+        },
+        { headers: corsHeaders }
+      );
+    }
+
+    // OpenAI-compatible models list - no auth required
+    if (url.pathname === "/v1/models" && request.method === "GET") {
+      return Response.json(
+        {
+          object: "list",
+          data: [
+            {
+              id: "qwen3-embedding",
+              object: "model",
+              created: 1700000000,
+              owned_by: "cloudflare",
+              permission: [],
+              root: "@cf/qwen/qwen3-embedding-0.6b",
+            },
+          ],
+        },
+        { headers: corsHeaders }
+      );
+    }
+
     // All other endpoints require authentication
     if (!authenticate(request, env)) {
       return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
@@ -105,7 +151,8 @@ export default {
         const body: ChatRequest = await request.json();
         const start = Date.now();
 
-        const response = await env.AI.run(body.model as BaseAiTextGenerationModels, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await (env.AI.run as any)(body.model, {
           messages: body.messages,
           max_tokens: body.max_tokens,
           temperature: body.temperature,
@@ -128,12 +175,13 @@ export default {
         );
       }
 
-      // Embeddings endpoint
+      // Embeddings endpoint (native format)
       if (url.pathname === "/embed" && request.method === "POST") {
         const body: EmbedRequest = await request.json();
         const start = Date.now();
 
-        const response = await env.AI.run(body.model as BaseAiTextEmbeddingsModels, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await (env.AI.run as any)(body.model, {
           text: body.text,
         });
 
@@ -147,6 +195,55 @@ export default {
             meta: {
               latencyMs,
               datacenter,
+              edge: true,
+            },
+          },
+          { headers: corsHeaders }
+        );
+      }
+
+      // OpenAI-compatible embeddings endpoint (works with LangChain, LlamaIndex, etc.)
+      if (url.pathname === "/v1/embeddings" && request.method === "POST") {
+        const body: OpenAIEmbedRequest = await request.json();
+        const start = Date.now();
+
+        // Normalize input to array
+        const inputs = Array.isArray(body.input) ? body.input : [body.input];
+
+        // Map OpenAI model names to Cloudflare models, or use default
+        const model = body.model?.startsWith("@cf/") ? body.model : DEFAULT_EMBEDDING_MODEL;
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const response = await (env.AI.run as any)(model, {
+          text: inputs,
+        });
+
+        const latencyMs = Date.now() - start;
+
+        // Transform to OpenAI format
+        const embeddings = response.data.map((embedding: number[], index: number) => ({
+          object: "embedding" as const,
+          embedding,
+          index,
+        }));
+
+        // Rough token estimate (4 chars per token average)
+        const totalChars = inputs.reduce((sum, text) => sum + text.length, 0);
+        const estimatedTokens = Math.ceil(totalChars / 4);
+
+        return Response.json(
+          {
+            object: "list",
+            data: embeddings,
+            model,
+            usage: {
+              prompt_tokens: estimatedTokens,
+              total_tokens: estimatedTokens,
+            },
+            // Include our meta for debugging
+            _meta: {
+              latencyMs,
+              datacenter: getDatacenter(request),
               edge: true,
             },
           },

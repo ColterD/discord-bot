@@ -203,9 +203,9 @@ export class ImagineCommand {
     this.rateLimiter.recordRequest(userId, channelId, isDM);
 
     // Check availability
-    const serviceCHeck = await this.checkServiceAvailability();
-    if (!serviceCHeck.available && serviceCHeck.embed) {
-      await interaction.editReply({ embeds: [serviceCHeck.embed] });
+    const serviceCheck = await this.checkServiceAvailability();
+    if (!serviceCheck.available && serviceCheck.embed) {
+      await interaction.editReply({ embeds: [serviceCheck.embed] });
       return;
     }
 
@@ -238,9 +238,11 @@ export class ImagineCommand {
         return;
       }
 
-      // Create attachment
+      // Create attachment with consistent filename
+      const timestamp = Date.now();
+      const filename = `imagine-${timestamp}.png`;
       const attachment = new AttachmentBuilder(result.imageBuffer, {
-        name: `imagine-${Date.now()}.png`,
+        name: filename,
         description: sanitized.text.slice(0, 100),
       });
 
@@ -250,7 +252,7 @@ export class ImagineCommand {
         .setColor(config.colors.success)
         .setTitle("🎨 Image Generated")
         .setDescription(`**Prompt:** ${sanitized.text.slice(0, 500)}`)
-        .setImage(`attachment://imagine-${Date.now()}.png`)
+        .setImage(`attachment://${filename}`)
         .addFields(
           {
             name: "Size",

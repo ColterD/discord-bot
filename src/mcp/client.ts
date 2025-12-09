@@ -17,6 +17,52 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("MCP");
 
 /**
+ * Sanitize error objects to prevent sensitive data exposure in logs
+ * Removes potential bearer tokens, auth headers, and config objects
+ */
+function sanitizeError(error: unknown): Error | string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  // Create a clean error with just the message and stack
+  const sanitized = new Error(error.message);
+  sanitized.name = error.name;
+  if (error.stack) {
+    sanitized.stack = error.stack;
+  }
+
+  // Don't copy over any additional properties that might contain secrets
+  return sanitized;
+}
+
+/**
+ * Race a promise against a timeout with proper cleanup
+ * Unlike raw Promise.race, this clears the timeout to prevent memory leaks
+ */
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  errorMessage: string
+): Promise<T> {
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error(errorMessage));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+/**
  * MCP Server configuration schema
  */
 const McpServerConfigSchema = z.object({
@@ -115,7 +161,7 @@ export class McpClientManager {
           log.error(
             `Failed to connect to MCP server ${serverName}: ` +
               (error instanceof Error ? error.message : String(error)),
-            error
+            sanitizeError(error)
           );
         }
       }
@@ -133,7 +179,7 @@ export class McpClientManager {
       log.error(
         "Failed to initialize MCP client manager: " +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
     }
   }
@@ -186,15 +232,12 @@ export class McpClientManager {
       }
     );
 
-    // Connect with timeout
-    const connectPromise = client.connect(transport);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error("Docker MCP Gateway connection timeout (stdio)"));
-      }, config.mcp.connectionTimeoutMs);
-    });
-
-    await Promise.race([connectPromise, timeoutPromise]);
+    // Connect with timeout (using helper to prevent timeout leak)
+    await withTimeout(
+      client.connect(transport),
+      config.mcp.connectionTimeoutMs,
+      "Docker MCP Gateway connection timeout (stdio)"
+    );
 
     // Get tools from gateway
     const toolsResult = await client.listTools();
@@ -247,18 +290,13 @@ export class McpClientManager {
       }
     );
 
-    // Connect with timeout
+    // Connect with timeout (using helper to prevent timeout leak)
     // Cast transport to satisfy exactOptionalPropertyTypes
-    const connectPromise = client.connect(
-      transport as unknown as Parameters<typeof client.connect>[0]
+    await withTimeout(
+      client.connect(transport as unknown as Parameters<typeof client.connect>[0]),
+      config.mcp.connectionTimeoutMs,
+      "Docker MCP Gateway connection timeout"
     );
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error("Docker MCP Gateway connection timeout"));
-      }, config.mcp.connectionTimeoutMs);
-    });
-
-    await Promise.race([connectPromise, timeoutPromise]);
 
     // Get tools from gateway
     const toolsResult = await client.listTools();
@@ -399,15 +437,12 @@ export class McpClientManager {
       }
     );
 
-    // Connect with timeout
-    const connectPromise = client.connect(transport);
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => {
-        reject(new Error(`Connection timeout for ${serverName}`));
-      }, config.mcp.connectionTimeoutMs);
-    });
-
-    await Promise.race([connectPromise, timeoutPromise]);
+    // Connect with timeout (using helper to prevent timeout leak)
+    await withTimeout(
+      client.connect(transport),
+      config.mcp.connectionTimeoutMs,
+      `Connection timeout for ${serverName}`
+    );
 
     // Get tools from server
     const toolsResult = await client.listTools();
@@ -524,7 +559,7 @@ export class McpClientManager {
       log.error(
         `Failed to call tool ${toolName}: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
       throw error;
     }
@@ -547,7 +582,7 @@ export class McpClientManager {
       log.error(
         `Failed to call Docker Gateway tool ${toolName}: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
 
       // Attempt reconnection if auto-reconnect is enabled
@@ -639,7 +674,7 @@ export class McpClientManager {
         log.error(
           `Error disconnecting from ${serverName}: ` +
             (error instanceof Error ? error.message : String(error)),
-          error
+          sanitizeError(error)
         );
       }
     }
@@ -655,7 +690,7 @@ export class McpClientManager {
         log.error(
           `Error disconnecting from Docker MCP Gateway: ` +
             (error instanceof Error ? error.message : String(error)),
-          error
+          sanitizeError(error)
         );
       }
     }
@@ -721,7 +756,7 @@ export class McpClientManager {
       log.error(
         `Failed to refresh Docker MCP Gateway tools: ` +
           (error instanceof Error ? error.message : String(error)),
-        error
+        sanitizeError(error)
       );
       throw error;
     }

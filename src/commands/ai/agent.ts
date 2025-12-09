@@ -3,6 +3,14 @@ import { Discord, Slash, SlashOption } from "discordx";
 import { getAgentService } from "../../ai/agent.js";
 import config from "../../config.js";
 
+/**
+ * Safely extract model name from model path (e.g., "ollama/llama3" -> "llama3")
+ */
+function getModelDisplayName(): string {
+  const parts = config.llm.model.split("/");
+  return parts.pop() ?? config.llm.model;
+}
+
 @Discord()
 export class AgentCommands {
   private get agentService() {
@@ -53,10 +61,7 @@ export class AgentCommands {
       if (result.toolsUsed.length > 0) {
         footerParts.push(`Tools: ${result.toolsUsed.join(", ")}`);
       }
-      footerParts.push(
-        `Steps: ${result.iterations}`,
-        `Model: ${config.llm.model.split("/").pop()}`
-      );
+      footerParts.push(`Steps: ${result.iterations}`, `Model: ${getModelDisplayName()}`);
       embed.setFooter({ text: footerParts.join(" | ") });
 
       // If verbose mode, add thinking process
@@ -211,7 +216,7 @@ Use the calculate tool to verify your work. Show your reasoning and provide the 
         .setTitle("🔢 Calculation Result")
         .setDescription(result.response.slice(0, 4000))
         .setFooter({
-          text: `Model: ${config.llm.model.split("/").pop()}`,
+          text: `Model: ${getModelDisplayName()}`,
         })
         .setTimestamp();
 

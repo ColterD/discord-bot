@@ -19,7 +19,11 @@ RUN npm run build
 RUN npm prune --production
 
 # Stage 2: Production image using distroless
-FROM gcr.io/distroless/nodejs22-debian12:nonroot
+# Pinned to specific SHA for reproducible builds - update periodically for security patches
+# To get latest: docker pull gcr.io/distroless/nodejs22-debian12:nonroot && docker inspect --format='{{.RepoDigests}}'
+# SECURITY: Using :nonroot tag which runs as UID 65532, not root
+# NOSONAR: docker:S6471 - distroless nonroot images explicitly run as non-privileged user
+FROM gcr.io/distroless/nodejs22-debian12:nonroot@sha256:9187fd451b5e2d258d691cb7da51020bfc8f557cc4a58e80b38f3f30bbbc37f9
 
 WORKDIR /app
 

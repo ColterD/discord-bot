@@ -1,6 +1,7 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    # Pinned version - check https://hub.docker.com/r/ollama/ollama for updates
+    image: ollama/ollama:0.5.4
     container_name: ollama
     restart: unless-stopped
     profiles: ["", "dev", "prod", "minimal"]
@@ -36,7 +37,8 @@ services:
       - OLLAMA_KV_CACHE_TYPE=q8_0
 
   chromadb:
-    image: chromadb/chroma:latest
+    # Pinned version - check https://hub.docker.com/r/chromadb/chroma for updates
+    image: chromadb/chroma:1.3.5
     container_name: chromadb
     restart: unless-stopped
     profiles: ["", "dev", "prod"]
@@ -78,6 +80,8 @@ services:
       start_period: 5s
 
   comfyui:
+    # Third-party image without semantic versioning - monitor for updates
+    # Consider building own image for production stability
     image: zhangp365/comfyui:latest
     container_name: comfyui
     restart: unless-stopped
@@ -114,10 +118,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      # ComfyUI with GPU and model loading needs extra startup time
+      start_period: 180s
 
   searxng:
-    image: searxng/searxng:latest
+    # Pinned version - check https://hub.docker.com/r/searxng/searxng for updates
+    image: searxng/searxng:2024.12.16-13f58a84e
     container_name: searxng
     restart: unless-stopped
     profiles: ["", "dev", "prod"]

@@ -30,6 +30,19 @@ const log = createLogger("MemoryManager");
 export const BOT_USER_ID = "bot";
 
 /**
+ * Discord snowflake ID validation pattern
+ * Snowflakes are 17-19 digit numbers
+ */
+const DISCORD_SNOWFLAKE_PATTERN = /^\d{17,19}$/;
+
+/**
+ * Validate a Discord user ID (snowflake format or special BOT_USER_ID)
+ */
+function isValidUserId(userId: string): boolean {
+  return userId === BOT_USER_ID || DISCORD_SNOWFLAKE_PATTERN.test(userId);
+}
+
+/**
  * Pattern sets for memory classification
  * Used to determine memory type and importance
  *
@@ -127,8 +140,8 @@ export class MemoryManager {
       return;
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format
+    if (!isValidUserId(userId)) {
       log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
       return;
     }
@@ -243,8 +256,8 @@ export class MemoryManager {
       return false;
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format
+    if (!isValidUserId(userId)) {
       log.warn(`Invalid userId format: ${userId} - skipping memory addition`);
       return false;
     }
@@ -290,8 +303,8 @@ export class MemoryManager {
       return [];
     }
 
-    // Validate userId format (Discord snowflake: 17-19 digits)
-    if (!/^\d{17,19}$/.test(userId)) {
+    // Validate userId format
+    if (!isValidUserId(userId)) {
       log.warn(`Invalid userId format: ${userId} - returning empty results`);
       return [];
     }
@@ -467,8 +480,8 @@ export class MemoryManager {
     const maxTokens = config.memory.maxContextTokens;
     const allocation = config.memory.tierAllocation;
 
-    // Rough token estimation (4 chars per token average)
-    const charsPerToken = 4;
+    // Configurable token estimation (default 4 chars per token)
+    const charsPerToken = config.memory.charsPerToken;
     const activeTokens = Math.floor(maxTokens * allocation.activeContext);
     const profileTokens = Math.floor(maxTokens * allocation.userProfile);
     const episodicTokens = Math.floor(maxTokens * allocation.episodic);

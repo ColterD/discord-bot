@@ -58,11 +58,12 @@ class DockerClient {
             : undefined,
         },
         (res) => {
-          let body = "";
+          const chunks: Buffer[] = [];
           res.on("data", (chunk: Buffer) => {
-            body += chunk.toString();
+            chunks.push(chunk);
           });
           res.on("end", () => {
+            const body = Buffer.concat(chunks).toString();
             resolve({ statusCode: res.statusCode ?? 500, body });
           });
         }
@@ -181,19 +182,27 @@ function checkValkeyTcp(
     const socket = new net.Socket();
     socket.setTimeout(timeout);
 
+    // Accumulate data chunks - TCP doesn't guarantee single-chunk delivery
+    let buffer = "";
+
     socket.on("connect", () => {
       // Send Redis PING command
       socket.write("PING\r\n");
     });
 
     socket.on("data", (data) => {
-      const response = data.toString().trim();
-      socket.destroy();
+      buffer += data.toString();
 
-      if (response === "+PONG") {
-        resolve({ healthy: true });
-      } else {
-        resolve({ healthy: false, message: `Unexpected response: ${response}` });
+      // Check for complete RESP response (ends with \r\n)
+      if (buffer.includes("\r\n")) {
+        socket.destroy();
+        const response = buffer.trim();
+
+        if (response === "+PONG") {
+          resolve({ healthy: true });
+        } else {
+          resolve({ healthy: false, message: `Unexpected response: ${response}` });
+        }
       }
     });
 

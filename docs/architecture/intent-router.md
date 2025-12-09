@@ -1,16 +1,16 @@
-# Intelligent Intent Router Design
+# Intelligent Intent Router
 
-> **Living Document** - Last Updated: December 2025
+> **Architecture Document** - Last Updated: December 2025
 
-This document outlines the design for an intelligent "router" AI layer that sits at the top of the orchestration flow. The router classifies user intent before loading heavy models, enabling significant VRAM savings and faster response times.
+This document describes the intelligent "router" AI layer that classifies user intent before loading heavy models, enabling significant VRAM savings and faster response times.
 
 ## Key Design Principle
 
-**Keep image generation and main LLM local. Offload lightweight routing/embedding tasks to free cloud APIs to maximize local GPU resources.**
+**Keep image generation and main LLM local. Offload lightweight routing/embedding tasks to Cloudflare Workers AI to maximize local GPU resources.**
 
 ## Problem Statement
 
-Currently, the Discord bot loads the main LLM (qwen3-abliterated:30b, ~14GB) for **every** user message, even when:
+Without routing, the Discord bot would load the main LLM (~14GB) for **every** user message, even when:
 
 - The user is requesting an image (could route directly to ComfyUI)
 - The user is asking a simple greeting (could use a lightweight response)
@@ -19,7 +19,7 @@ Currently, the Discord bot loads the main LLM (qwen3-abliterated:30b, ~14GB) for
 This leads to:
 
 1. **VRAM contention** when other applications are using GPU memory
-2. **Unnecessary latency** from loading a 30B model for simple tasks
+2. **Unnecessary latency** from loading a large model for simple tasks
 3. **Resource waste** when the task could be handled by smaller models
 
 ## Routing Architecture
@@ -38,19 +38,19 @@ This leads to:
 │                           │ No match                            │
 │                           ▼                                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  TIER 1: Groq llama-prompt-guard-2-22m (CLOUD FREE)      │   │
-│  │  Cost: FREE | Latency: ~50-100ms | VRAM: 0               │   │
-│  │  → Intent classification via free API                    │   │
-│  │  → Fallback: Cloudflare text-classification              │   │
+│  │  TIER 1: Cloudflare Workers AI (CLOUD FREE)              │   │
+│  │  Cost: FREE | Latency: ~20-50ms | VRAM: 0                │   │
+│  │  → Router: @cf/ibm-granite/granite-4.0-h-micro           │   │
+│  │  → Embeddings: @cf/qwen/qwen3-embedding-0.6b             │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                           │                                     │
-│                           │ API unavailable                     │
+│                           │ Quota exhausted or unavailable      │
 │                           ▼                                     │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │  TIER 2: Local Small LLM (FALLBACK)                      │   │
-│  │  Cost: FREE | Latency: ~200-500ms | VRAM: ~300MB         │   │
-│  │  → smollm2:135m or granite4:350m                         │   │
-│  │  → Only loaded when cloud APIs fail                      │   │
+│  │  TIER 2: Local Ollama (FALLBACK)                         │   │
+│  │  Cost: FREE | Latency: ~100-300ms | VRAM: ~1GB           │   │
+│  │  → qwen3-embedding:0.6b for embeddings                   │   │
+│  │  → Main LLM for classification if needed                 │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
@@ -80,95 +80,58 @@ enum IntentCategory {
 }
 ```
 
-## Cloud Offloading Strategy
+## Cloudflare Workers AI Integration
 
-**Goal:** Preserve local VRAM for image generation (~6GB) and main LLM (~14GB) by offloading lightweight routing tasks to free cloud APIs.
+### Why Cloudflare?
 
-### Free API Options
+| Feature            | Benefit                                              |
+| ------------------ | ---------------------------------------------------- |
+| **Free tier**      | 10,000 neurons/day (generous for routing)            |
+| **Low latency**    | Edge compute, ~20-50ms response times                |
+| **Same models**    | qwen3-embedding matches local Ollama version         |
+| **No rate limits** | Quota-based, not request-limited                     |
+| **Edge Worker**    | Optional low-latency proxy for even faster responses |
 
-| Provider                  | Free Tier                | Best Use Case                                 | Latency    | Rate Limits        |
-| ------------------------- | ------------------------ | --------------------------------------------- | ---------- | ------------------ |
-| **Groq**                  | Unlimited (rate-limited) | Classification via `llama-prompt-guard-2-22m` | ~50-100ms  | 30 RPM, 15K TPM    |
-| **Cloudflare Workers AI** | 10,000 neurons/day       | Embeddings (`bge-small-en-v1.5`)              | ~20-50ms   | None (quota-based) |
-| **HuggingFace Inference** | $0.10/month credits      | Fallback embeddings                           | ~100-200ms | Varies by provider |
+### Provider Implementation
 
-### Groq Integration (Primary)
+The `CloudflareProvider` class in `src/ai/providers/cloudflare-provider.ts` handles:
 
-```typescript
-import Groq from "groq-sdk";
-
-class GroqRouter {
-  private readonly client = new Groq({ apiKey: process.env.GROQ_API_KEY });
-
-  private readonly systemPrompt = `You are an intent classifier. Respond with ONLY one word:
-- IMAGE: User wants to generate/create/draw an image
-- CHAT: General conversation or greetings
-- SEARCH: User wants to search or find information
-- TOOLS: User needs tools (code, memory, calculations)`;
-
-  async classify(message: string): Promise<string> {
-    const response = await this.client.chat.completions.create({
-      model: "llama-prompt-guard-2-22m", // FREE, 22M params
-      messages: [
-        { role: "system", content: this.systemPrompt },
-        { role: "user", content: message },
-      ],
-      max_tokens: 10,
-      temperature: 0,
-    });
-
-    return response.choices[0]?.message?.content?.trim() ?? "CHAT";
-  }
-}
-```
-
-### Rate Limit Handling
+- **Classification**: Uses Granite 4.0 micro for intent detection
+- **Embeddings**: Uses Qwen3 embedding (1024 dimensions)
+- **Quota tracking**: Automatically falls back when daily quota exhausted
+- **Edge Worker support**: Optional Worker proxy for lower latency
 
 ```typescript
-class ResilientRouter {
-  private groqFailures = 0;
-  private cloudflareQuotaExhausted = false;
-
-  async classify(message: string): Promise<RoutingDecision> {
-    // Tier 0: Always try pattern matching first (free, instant)
-    const patternResult = this.patternRouter.match(message);
-    if (patternResult.confidence > 0.95) {
-      return patternResult;
-    }
-
-    // Tier 1: Try Groq (free, fast)
-    if (this.groqFailures < 3) {
-      try {
-        return await this.groqRouter.classify(message);
-      } catch (error) {
-        if (error.status === 429) {
-          this.groqFailures++;
-          setTimeout(() => (this.groqFailures = 0), 60000);
-        }
-      }
-    }
-
-    // Tier 1b: Try Cloudflare (free quota)
-    if (!this.cloudflareQuotaExhausted) {
-      try {
-        return await this.cloudflareRouter.classify(message);
-      } catch (error) {
-        if (error.message.includes("quota")) {
-          this.cloudflareQuotaExhausted = true;
-          this.scheduleQuotaReset();
-        }
-      }
-    }
-
-    // Tier 2: Fall back to local small LLM
-    return await this.localRouter.classify(message);
-  }
-}
+// Example: Classification request
+const result = await cloudflareProvider.classify("draw me a cat in space", [
+  "image_generation",
+  "general_chat",
+  "web_search",
+  "memory_operation",
+]);
+// Returns: { intent: "image_generation", confidence: 0.9 }
 ```
 
-## Pattern Detection Examples
+### Quota Management
+
+The provider tracks quota usage and gracefully degrades:
+
+```typescript
+// Automatic fallback when quota exhausted
+if (cloudflareProvider.isQuotaExhausted()) {
+  // Falls back to local Ollama
+  return await ollamaProvider.embed(text);
+}
+
+// Quota resets at midnight UTC daily
+const resetTime = cloudflareProvider.getQuotaResetTime();
+```
+
+## Pattern Detection
 
 ### Image Generation Patterns
+
+Fast, zero-VRAM detection for common image requests:
 
 ```javascript
 const imagePatterns = [
@@ -182,10 +145,9 @@ const imagePatterns = [
   /\bportrait of\b/i,
 ];
 
-// Examples that would match:
+// Examples that match:
 // "draw me a cat"
 // "create an image of a sunset"
-// "tony and paulie from the sopranos as space marines"
 // "imagine a cyberpunk city"
 ```
 
@@ -200,17 +162,17 @@ const greetingPatterns = [
 
 ## VRAM Budget Analysis
 
-| Scenario      | Without Router                        | With Router (Cloud)       |
-| ------------- | ------------------------------------- | ------------------------- |
-| Image Request | 14GB (LLM) + 6GB (Z-Image) = **20GB** | **6GB** (0 VRAM overhead) |
-| Simple Chat   | 14GB (LLM) = **14GB**                 | **14GB**                  |
-| Web Search    | 14GB (LLM) = **14GB**                 | **14GB**                  |
+| Scenario      | Without Router                        | With Router                  |
+| ------------- | ------------------------------------- | ---------------------------- |
+| Image Request | 14GB (LLM) + 6GB (ComfyUI) = **20GB** | **6GB** (0 routing overhead) |
+| Simple Chat   | 14GB (LLM) = **14GB**                 | **14GB** (no savings)        |
+| Web Search    | 14GB (LLM) = **14GB**                 | **14GB** (no savings)        |
 
 **Savings for image requests: 14GB VRAM + 2-5 seconds latency**
 
-## ComfyUI Optimizations Applied
+## ComfyUI Optimizations
 
-The following optimizations reduce VRAM usage for Z-Image-Turbo:
+The following optimizations reduce VRAM usage for image generation:
 
 ### Docker Configuration
 
@@ -223,56 +185,50 @@ comfyui:
 
 ### Optimizations Breakdown
 
-| Optimization          | Flag                    | Effect                                 | VRAM Impact               |
-| --------------------- | ----------------------- | -------------------------------------- | ------------------------- |
-| **Torch Compile**     | `--fast`                | 10-30% faster inference                | Neutral                   |
-| **FP8 Text Encoder**  | `--fp8_e4m3fn-text-enc` | Quantizes text encoder to FP8          | **~4GB saved**            |
-| **Low VRAM Mode**     | `--lowvram`             | Offloads models to CPU when not in use | **~10GB freed** when idle |
-| **CUDA Malloc Async** | `--cuda-malloc`         | Better memory allocation               | Reduces fragmentation     |
-
-## Implementation Phases
-
-### Phase 1: Pattern-Based Router (IMMEDIATE)
-
-**Timeline:** 1-2 hours | **VRAM:** 0 | **Cost:** FREE
-
-- Implement regex patterns for image generation detection
-- Route image requests directly to ComfyUI, bypassing LLM entirely
-- **Impact:** 14GB VRAM saved for every image request
-
-### Phase 2: Groq Cloud Classification (RECOMMENDED)
-
-**Timeline:** 2-3 hours | **VRAM:** 0 | **Cost:** FREE
-
-- Integrate Groq API with `llama-prompt-guard-2-22m`
-- Use for ambiguous requests that don't match patterns
-- **Impact:** More accurate routing, still 0 local VRAM
-
-### Phase 3: Local Fallback Router (RESILIENCE)
-
-**Timeline:** 2-3 hours | **VRAM:** ~300MB when active | **Cost:** FREE
-
-- Download `smollm2:135m` as offline backup
-- Only loaded when cloud APIs fail
-- **Impact:** 100% availability even without internet
+| Optimization          | Flag                    | Effect                    | VRAM Impact           |
+| --------------------- | ----------------------- | ------------------------- | --------------------- |
+| **Torch Compile**     | `--fast`                | 10-30% faster inference   | Neutral               |
+| **FP8 Text Encoder**  | `--fp8_e4m3fn-text-enc` | Quantizes text encoder    | **~4GB saved**        |
+| **Low VRAM Mode**     | `--lowvram`             | Offloads to CPU when idle | **~10GB freed**       |
+| **CUDA Malloc Async** | `--cuda-malloc`         | Better allocation         | Reduces fragmentation |
 
 ## Configuration
 
-```bash
-# .env additions for cloud routing
-GROQ_API_KEY=gsk_xxxxxxxxxxxx          # Free at console.groq.com
-CLOUDFLARE_ACCOUNT_ID=xxxxxxxxxx       # Free at dash.cloudflare.com
-CLOUDFLARE_API_TOKEN=xxxxxxxxxx        # Workers AI API token
-HF_TOKEN=hf_xxxxxxxxxxxx               # Free at huggingface.co/settings/tokens
+All configuration is via environment variables (see `.env.example`):
 
-# Feature flags
-ROUTER_USE_CLOUD=true                  # Enable cloud routing
-ROUTER_FALLBACK_LOCAL=true             # Fall back to local if cloud fails
+```env
+# Cloudflare Workers AI
+CLOUDFLARE_ACCOUNT_ID=your_account_id
+CLOUDFLARE_API_TOKEN=your_api_token
+CLOUDFLARE_ROUTER_MODEL=@cf/ibm-granite/granite-4.0-h-micro
+CLOUDFLARE_EMBEDDING_MODEL=@cf/qwen/qwen3-embedding-0.6b
+
+# Optional: Edge Worker for lower latency
+CLOUDFLARE_WORKER_URL=https://your-worker.your-subdomain.workers.dev
+CLOUDFLARE_WORKER_SECRET=your_secret
+
+# Local fallback
+EMBEDDING_MODEL=qwen3-embedding:0.6b
 ```
+
+## Edge Worker (Optional)
+
+For even lower latency (~10-20ms), deploy the Edge Worker from `cloudflare-worker/`:
+
+```bash
+cd cloudflare-worker
+npm install
+npm run deploy
+```
+
+The Worker provides:
+
+- Lower latency (edge compute vs REST API)
+- Request caching
+- Datacenter affinity tracking
 
 ## References
 
-- [Eagle Training-Free Router](https://arxiv.org/abs/...)
-- [Router-R1 RL-based Routing](https://arxiv.org/abs/...)
-- [Groq API Documentation](https://console.groq.com/docs)
-- [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/)
+- [Cloudflare Workers AI Documentation](https://developers.cloudflare.com/workers-ai/)
+- [Granite 4.0 Model Card](https://developers.cloudflare.com/workers-ai/models/granite-4.0-h-micro/)
+- [Qwen3 Embedding Model](https://developers.cloudflare.com/workers-ai/models/qwen3-embedding-0.6b/)
